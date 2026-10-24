@@ -1,0 +1,345 @@
+name: OpenShell images
+
+# Push to main publishes :edge and :sha-<short> for layers whose inputs changed.
+# schedule runs daily because GitHub cron has no every-3-days interval. The
+# plan script rebuilds with --pull --no-cache only when the newest
+# openshell-YYYY.MM.DD.NN tag is at least 3 calendar days old (or missing).
+# That run publishes the calver and :latest, then creates the git tag.
+# workflow_dispatch can publish edge, or a release without waiting.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "openshell/**"
+      - ".github/workflows/openshell-images.yml"
+      - ".github/workflows/openshell-build-image.yml"
+      - "justfile"
+  schedule:
+    - cron: "15 15 * * *"
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "edge publishes :edge and :sha. release publishes a calver tag and :latest."
+        type: choice
+        required: true
+        default: edge
+        options:
+          - edge
+          - release
+
+permissions:
+  contents: read
+
+concurrency:
+  group: openshell-images
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      publish: ${{ steps.plan.outputs.publish }}
+      image_version: ${{ steps.plan.outputs.image_version }}
+      git_tag: ${{ steps.plan.outputs.git_tag }}
+      short_sha: ${{ steps.plan.outputs.short_sha }}
+      git_sha: ${{ steps.plan.outputs.git_sha }}
+      no_cache: ${{ steps.plan.outputs.no_cache }}
+      build_agent_cli: ${{ steps.plan.outputs.build_agent_cli }}
+      build_python: ${{ steps.plan.outputs.build_python }}
+      build_rust: ${{ steps.plan.outputs.build_rust }}
+      build_go: ${{ steps.plan.outputs.build_go }}
+      build_pi: ${{ steps.plan.outputs.build_pi }}
+      build_codex: ${{ steps.plan.outputs.build_codex }}
+      build_claude: ${{ steps.plan.outputs.build_claude }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Test plan and manifest tag selection
+        run: |
+          bash openshell/scripts/plan_test.sh
+          bash openshell/scripts/ci_merge_test.sh
+          bash openshell/scripts/privacy-grep.sh
+
+      - name: Plan
+        id: plan
+        env:
+          PLAN_EVENT: ${{ github.event_name }}
+          PLAN_PUBLISH: ${{ github.event_name == 'workflow_dispatch' && inputs.publish || '' }}
+          PLAN_BEFORE: ${{ github.event_name == 'push' && github.event.before || '' }}
+          PLAN_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          args=(--event "$PLAN_EVENT" --sha "$PLAN_SHA")
+          if [[ -n "$PLAN_PUBLISH" ]]; then
+            args+=(--publish "$PLAN_PUBLISH")
+          fi
+          if [[ "$PLAN_EVENT" == push ]]; then
+            if [[ -z "$PLAN_BEFORE" || "$PLAN_BEFORE" =~ ^0+$ ]] || ! git cat-file -e "${PLAN_BEFORE}^{commit}" 2>/dev/null; then
+              args+=(--all-files)
+            else
+              git diff --name-only "$PLAN_BEFORE" "$PLAN_SHA" >"$RUNNER_TEMP/files.txt"
+              args+=(--files "$RUNNER_TEMP/files.txt")
+            fi
+          fi
+          bash openshell/scripts/plan.sh "${args[@]}" | tee "$RUNNER_TEMP/plan.env"
+          cat "$RUNNER_TEMP/plan.env" >>"$GITHUB_OUTPUT"
+          {
+            echo "### OpenShell plan"
+            echo
+            sed 's/^/- `/' "$RUNNER_TEMP/plan.env" | sed 's/$/`/'
+          } >>"$GITHUB_STEP_SUMMARY"
+
+  resolve-parent:
+    needs: plan
+    if: |
+      needs.plan.result == 'success' &&
+      needs.plan.outputs.build_agent_cli != 'true' &&
+      (
+        needs.plan.outputs.build_python == 'true' ||
+        needs.plan.outputs.build_rust == 'true' ||
+        needs.plan.outputs.build_go == 'true' ||
+        needs.plan.outputs.build_pi == 'true' ||
+        needs.plan.outputs.build_codex == 'true' ||
+        needs.plan.outputs.build_claude == 'true'
+      )
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      agent_cli_digest: ${{ steps.resolve.outputs.agent_cli_digest }}
+    steps:
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Log in to GHCR
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve published agent-cli digest
+        id: resolve
+        env:
+          PUBLISH: ${{ needs.plan.outputs.publish }}
+        run: |
+          set -euo pipefail
+          if [[ "$PUBLISH" == release ]]; then
+            tag=latest
+          else
+            tag=edge
+          fi
+          digest=$(docker buildx imagetools inspect "ghcr.io/iancleary/openshell-agent-cli:${tag}" --format '{{.Manifest.Digest}}')
+          if [[ ! "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+            printf 'could not resolve openshell-agent-cli:%s (%s)\n' "$tag" "$digest" >&2
+            printf 'publish agent-cli before building a child on the existing tag\n' >&2
+            exit 1
+          fi
+          printf 'agent_cli_digest=%s\n' "$digest" >>"$GITHUB_OUTPUT"
+
+  agent-cli:
+    needs: plan
+    if: needs.plan.outputs.build_agent_cli == 'true'
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/openshell-build-image.yml
+    with:
+      recipe: agent-cli
+      image: ghcr.io/iancleary/openshell-agent-cli
+      publish: ${{ needs.plan.outputs.publish }}
+      image_version: ${{ needs.plan.outputs.image_version }}
+      short_sha: ${{ needs.plan.outputs.short_sha }}
+      git_sha: ${{ needs.plan.outputs.git_sha }}
+      no_cache: ${{ needs.plan.outputs.no_cache == 'true' }}
+
+  python:
+    needs: [plan, agent-cli, resolve-parent]
+    if: |
+      always() &&
+      needs.plan.result == 'success' &&
+      needs.plan.outputs.build_python == 'true' &&
+      (needs.agent-cli.result == 'success' || needs.agent-cli.result == 'skipped') &&
+      (needs.resolve-parent.result == 'success' || needs.resolve-parent.result == 'skipped')
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/openshell-build-image.yml
+    with:
+      recipe: python
+      image: ghcr.io/iancleary/openshell-python
+      publish: ${{ needs.plan.outputs.publish }}
+      image_version: ${{ needs.plan.outputs.image_version }}
+      short_sha: ${{ needs.plan.outputs.short_sha }}
+      git_sha: ${{ needs.plan.outputs.git_sha }}
+      no_cache: ${{ needs.plan.outputs.no_cache == 'true' }}
+      base_digest: ${{ needs.agent-cli.outputs.digest != '' && needs.agent-cli.outputs.digest || needs.resolve-parent.outputs.agent_cli_digest }}
+      base_image: ${{ format('ghcr.io/iancleary/openshell-agent-cli@{0}', needs.agent-cli.outputs.digest != '' && needs.agent-cli.outputs.digest || needs.resolve-parent.outputs.agent_cli_digest) }}
+
+  rust:
+    needs: [plan, agent-cli, resolve-parent]
+    if: |
+      always() &&
+      needs.plan.result == 'success' &&
+      needs.plan.outputs.build_rust == 'true' &&
+      (needs.agent-cli.result == 'success' || needs.agent-cli.result == 'skipped') &&
+      (needs.resolve-parent.result == 'success' || needs.resolve-parent.result == 'skipped')
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/openshell-build-image.yml
+    with:
+      recipe: rust
+      image: ghcr.io/iancleary/openshell-rust
+      publish: ${{ needs.plan.outputs.publish }}
+      image_version: ${{ needs.plan.outputs.image_version }}
+      short_sha: ${{ needs.plan.outputs.short_sha }}
+      git_sha: ${{ needs.plan.outputs.git_sha }}
+      no_cache: ${{ needs.plan.outputs.no_cache == 'true' }}
+      base_digest: ${{ needs.agent-cli.outputs.digest != '' && needs.agent-cli.outputs.digest || needs.resolve-parent.outputs.agent_cli_digest }}
+      base_image: ${{ format('ghcr.io/iancleary/openshell-agent-cli@{0}', needs.agent-cli.outputs.digest != '' && needs.agent-cli.outputs.digest || needs.resolve-parent.outputs.agent_cli_digest) }}
+
+  go:
+    needs: [plan, agent-cli, resolve-parent]
+    if: |
+      always() &&
+      needs.plan.result == 'success' &&
+      needs.plan.outputs.build_go == 'true' &&
+      (needs.agent-cli.result == 'success' || needs.agent-cli.result == 'skipped') &&
+      (needs.resolve-parent.result == 'success' || needs.resolve-parent.result == 'skipped')
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/openshell-build-image.yml
+    with:
+      recipe: go
+      image: ghcr.io/iancleary/openshell-go
+      publish: ${{ needs.plan.outputs.publish }}
+      image_version: ${{ needs.plan.outputs.image_version }}
+      short_sha: ${{ needs.plan.outputs.short_sha }}
+      git_sha: ${{ needs.plan.outputs.git_sha }}
+      no_cache: ${{ needs.plan.outputs.no_cache == 'true' }}
+      base_digest: ${{ needs.agent-cli.outputs.digest != '' && needs.agent-cli.outputs.digest || needs.resolve-parent.outputs.agent_cli_digest }}
+      base_image: ${{ format('ghcr.io/iancleary/openshell-agent-cli@{0}', needs.agent-cli.outputs.digest != '' && needs.agent-cli.outputs.digest || needs.resolve-parent.outputs.agent_cli_digest) }}
+
+  pi:
+    needs: [plan, agent-cli, resolve-parent]
+    if: |
+      always() &&
+      needs.plan.result == 'success' &&
+      needs.plan.outputs.build_pi == 'true' &&
+      (needs.agent-cli.result == 'success' || needs.agent-cli.result == 'skipped') &&
+      (needs.resolve-parent.result == 'success' || needs.resolve-parent.result == 'skipped')
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/openshell-build-image.yml
+    with:
+      recipe: pi
+      image: ghcr.io/iancleary/openshell-pi
+      publish: ${{ needs.plan.outputs.publish }}
+      image_version: ${{ needs.plan.outputs.image_version }}
+      short_sha: ${{ needs.plan.outputs.short_sha }}
+      git_sha: ${{ needs.plan.outputs.git_sha }}
+      no_cache: ${{ needs.plan.outputs.no_cache == 'true' }}
+      base_digest: ${{ needs.agent-cli.outputs.digest != '' && needs.agent-cli.outputs.digest || needs.resolve-parent.outputs.agent_cli_digest }}
+      base_image: ${{ format('ghcr.io/iancleary/openshell-agent-cli@{0}', needs.agent-cli.outputs.digest != '' && needs.agent-cli.outputs.digest || needs.resolve-parent.outputs.agent_cli_digest) }}
+
+  codex:
+    needs: [plan, agent-cli, resolve-parent]
+    if: |
+      always() &&
+      needs.plan.result == 'success' &&
+      needs.plan.outputs.build_codex == 'true' &&
+      (needs.agent-cli.result == 'success' || needs.agent-cli.result == 'skipped') &&
+      (needs.resolve-parent.result == 'success' || needs.resolve-parent.result == 'skipped')
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/openshell-build-image.yml
+    with:
+      recipe: codex
+      image: ghcr.io/iancleary/openshell-codex
+      publish: ${{ needs.plan.outputs.publish }}
+      image_version: ${{ needs.plan.outputs.image_version }}
+      short_sha: ${{ needs.plan.outputs.short_sha }}
+      git_sha: ${{ needs.plan.outputs.git_sha }}
+      no_cache: ${{ needs.plan.outputs.no_cache == 'true' }}
+      base_digest: ${{ needs.agent-cli.outputs.digest != '' && needs.agent-cli.outputs.digest || needs.resolve-parent.outputs.agent_cli_digest }}
+      base_image: ${{ format('ghcr.io/iancleary/openshell-agent-cli@{0}', needs.agent-cli.outputs.digest != '' && needs.agent-cli.outputs.digest || needs.resolve-parent.outputs.agent_cli_digest) }}
+
+  claude:
+    needs: [plan, agent-cli, resolve-parent]
+    if: |
+      always() &&
+      needs.plan.result == 'success' &&
+      needs.plan.outputs.build_claude == 'true' &&
+      (needs.agent-cli.result == 'success' || needs.agent-cli.result == 'skipped') &&
+      (needs.resolve-parent.result == 'success' || needs.resolve-parent.result == 'skipped')
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/openshell-build-image.yml
+    with:
+      recipe: claude
+      image: ghcr.io/iancleary/openshell-claude
+      publish: ${{ needs.plan.outputs.publish }}
+      image_version: ${{ needs.plan.outputs.image_version }}
+      short_sha: ${{ needs.plan.outputs.short_sha }}
+      git_sha: ${{ needs.plan.outputs.git_sha }}
+      no_cache: ${{ needs.plan.outputs.no_cache == 'true' }}
+      base_digest: ${{ needs.agent-cli.outputs.digest != '' && needs.agent-cli.outputs.digest || needs.resolve-parent.outputs.agent_cli_digest }}
+      base_image: ${{ format('ghcr.io/iancleary/openshell-agent-cli@{0}', needs.agent-cli.outputs.digest != '' && needs.agent-cli.outputs.digest || needs.resolve-parent.outputs.agent_cli_digest) }}
+
+  release:
+    needs: [plan, agent-cli, python, rust, go, pi, codex, claude]
+    if: |
+      always() &&
+      needs.plan.result == 'success' &&
+      needs.plan.outputs.publish == 'release' &&
+      (needs.plan.outputs.build_agent_cli != 'true' || needs.agent-cli.result == 'success') &&
+      (needs.plan.outputs.build_python != 'true' || needs.python.result == 'success') &&
+      (needs.plan.outputs.build_rust != 'true' || needs.rust.result == 'success') &&
+      (needs.plan.outputs.build_go != 'true' || needs.go.result == 'success') &&
+      (needs.plan.outputs.build_pi != 'true' || needs.pi.result == 'success') &&
+      (needs.plan.outputs.build_codex != 'true' || needs.codex.result == 'success') &&
+      (needs.plan.outputs.build_claude != 'true' || needs.claude.result == 'success')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Create calver release
+        env:
+          GIT_TAG: ${{ needs.plan.outputs.git_tag }}
+          IMAGE_VERSION: ${{ needs.plan.outputs.image_version }}
+          GH_TOKEN: ${{ github.token }}
+        run: bash openshell/scripts/create-release.sh
