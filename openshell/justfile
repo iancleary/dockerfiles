@@ -1,0 +1,110 @@
+# Local OpenShell image builds. Docker must already be running.
+# Images stay on this machine as openshell-<layer>:phase1.
+# CI calls these same recipes with OPENSHELL_BASE_IMAGE set to the parent
+# digest and OPENSHELL_BUILD_FLAGS set for a digest-only push.
+
+set shell := ["bash", "-euo", "pipefail", "-c"]
+
+images := source_directory()
+build_script := images / "scripts" / "docker-build.sh"
+
+agent_cli_tag := env_var_or_default("OPENSHELL_AGENT_CLI_TAG", "openshell-agent-cli:phase1")
+python_tag := env_var_or_default("OPENSHELL_PYTHON_TAG", "openshell-python:phase1")
+rust_tag := env_var_or_default("OPENSHELL_RUST_TAG", "openshell-rust:phase1")
+go_tag := env_var_or_default("OPENSHELL_GO_TAG", "openshell-go:phase1")
+pi_tag := env_var_or_default("OPENSHELL_PI_TAG", "openshell-pi:phase1")
+codex_tag := env_var_or_default("OPENSHELL_CODEX_TAG", "openshell-codex:phase1")
+claude_tag := env_var_or_default("OPENSHELL_CLAUDE_TAG", "openshell-claude:phase1")
+
+# List image recipes without building.
+default:
+    @just --justfile {{ quote(justfile()) }} --list
+
+# Build every default image.
+build: all
+
+# Stop when the Docker CLI is missing or the daemon is not already running.
+[private]
+_require-docker:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if ! command -v docker >/dev/null 2>&1; then
+      printf 'docker is not on PATH. Start Docker yourself, then re-run.\n' >&2
+      exit 1
+    fi
+    if ! docker info >/dev/null 2>&1; then
+      printf 'Docker is not running. Start it yourself, then re-run.\n' >&2
+      exit 1
+    fi
+
+# Build agent-cli, python, rust, and go through build.sh.
+stacks: _require-docker
+    @bash {{ quote(images / "build.sh") }}
+
+# Build openshell-agent-cli:phase1.
+agent-cli: _require-docker
+    @bash {{ quote(build_script) }} {{ quote(images / "agent-cli" / "Dockerfile") }} {{ quote(images) }} {{ quote(agent_cli_tag) }} FD_VERSION RG_VERSION JUST_VERSION
+
+# Build openshell-python:phase1 on agent-cli.
+python: _require-docker
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [[ -z "${OPENSHELL_BASE_IMAGE:-}" ]]; then
+      just --justfile {{ quote(justfile()) }} agent-cli
+    fi
+    bash {{ quote(build_script) }} {{ quote(images / "python" / "Dockerfile") }} {{ quote(images) }} {{ quote(python_tag) }} UV_VERSION PYTHON_VERSION PRE_COMMIT_VERSION
+
+# Build openshell-rust:phase1 on agent-cli.
+rust: _require-docker
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [[ -z "${OPENSHELL_BASE_IMAGE:-}" ]]; then
+      just --justfile {{ quote(justfile()) }} agent-cli
+    fi
+    bash {{ quote(build_script) }} {{ quote(images / "rust" / "Dockerfile") }} {{ quote(images) }} {{ quote(rust_tag) }} RUST_VERSION
+
+# Build openshell-go:phase1 on agent-cli.
+go: _require-docker
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [[ -z "${OPENSHELL_BASE_IMAGE:-}" ]]; then
+      just --justfile {{ quote(justfile()) }} agent-cli
+    fi
+    bash {{ quote(build_script) }} {{ quote(images / "go" / "Dockerfile") }} {{ quote(images) }} {{ quote(go_tag) }} GO_VERSION
+
+# Build openshell-pi:phase1 on agent-cli.
+pi: _require-docker
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [[ -z "${OPENSHELL_BASE_IMAGE:-}" ]]; then
+      just --justfile {{ quote(justfile()) }} agent-cli
+    fi
+    bash {{ quote(build_script) }} {{ quote(images / "pi" / "Dockerfile") }} {{ quote(images / "pi") }} {{ quote(pi_tag) }} PI_VERSION NODE_VERSION
+
+# Build openshell-codex:phase1 on agent-cli.
+codex: _require-docker
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [[ -z "${OPENSHELL_BASE_IMAGE:-}" ]]; then
+      just --justfile {{ quote(justfile()) }} agent-cli
+    fi
+    bash {{ quote(build_script) }} {{ quote(images / "codex" / "Dockerfile") }} {{ quote(images / "codex") }} {{ quote(codex_tag) }} CODEX_VERSION
+
+# Build openshell-claude:phase1 on agent-cli.
+claude: _require-docker
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [[ -z "${OPENSHELL_BASE_IMAGE:-}" ]]; then
+      just --justfile {{ quote(justfile()) }} agent-cli
+    fi
+    bash {{ quote(build_script) }} {{ quote(images / "claude" / "Dockerfile") }} {{ quote(images / "claude") }} {{ quote(claude_tag) }} CLAUDE_VERSION
+
+# Build local-only openshell-pi:rust on the rust stack. Not a published package.
+pi-rust: rust
+    #!/usr/bin/env bash
+    set -euo pipefail
+    OPENSHELL_BASE_IMAGE=openshell-rust:phase1 \
+      bash {{ quote(build_script) }} {{ quote(images / "pi" / "Dockerfile") }} {{ quote(images / "pi") }} openshell-pi:rust PI_VERSION NODE_VERSION
+
+# Build the shared floor and the three default harness images.
+all: stacks pi codex claude

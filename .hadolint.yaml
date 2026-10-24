@@ -1,0 +1,5 @@
+# DL3066 flags `USER agent` and `USER root`. Those accounts exist in the image
+# (agent is uid 1000, created by install-agent-cli.sh) and are not host users.
+failure-threshold: warning
+ignored:
+  - DL3066
