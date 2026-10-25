@@ -8,12 +8,19 @@ set -euo pipefail
 
 if [[ "$PUBLISH" == release ]]; then
   : "${IMAGE_VERSION:?IMAGE_VERSION is required}"
+  : "${SHORT_SHA:?SHORT_SHA is required}"
   if [[ ! "$IMAGE_VERSION" =~ ^[0-9]{4}\.[0-9]{2}\.[0-9]{2}\.[0-9]{2}$ ]]; then
     printf 'bad calver %s\n' "$IMAGE_VERSION" >&2
     exit 1
   fi
-  primary=${IMAGE}:${IMAGE_VERSION}
-  tag_args=(-t "$primary" -t "${IMAGE}:latest")
+  if [[ ! "$SHORT_SHA" =~ ^[0-9a-f]{7}$ ]]; then
+    printf 'bad short sha %s\n' "$SHORT_SHA" >&2
+    exit 1
+  fi
+  # The list needs a registry reference. Calver and :latest are applied by
+  # the release job, and only after every image manifest has succeeded.
+  primary=${IMAGE}:sha-${SHORT_SHA}
+  tag_args=(-t "$primary")
 elif [[ "$PUBLISH" == edge ]]; then
   : "${SHORT_SHA:?SHORT_SHA is required}"
   if [[ ! "$SHORT_SHA" =~ ^[0-9a-f]{7}$ ]]; then

@@ -74,9 +74,12 @@ when something under `openshell/` changed, and an unchanged tree waits.
 A month boundary does not skip or bunch days. The 30-day run is the
 security rebuild for a tree that stayed still.
 
-That rebuild uses `docker build --pull --no-cache`, pushes a new calver and
-`:latest`, and creates the git tag `openshell-YYYY.MM.DD.NN` only after
-every image manifest succeeds. `.NN` starts at `01` and increments when more
+That rebuild uses `docker build --pull --no-cache`. Each image pushes its
+manifest list under `:sha-<7>` only. The release job then tags every image
+with the calver and `:latest`, and creates the git tag
+`openshell-YYYY.MM.DD.NN`. That job does not run when any manifest failed,
+so a partial failure does not move `:latest` or the calver for a subset of
+images. `.NN` starts at `01` and increments when more
 than one release happens on the same UTC day. Actions → OpenShell images →
 Run workflow → `release` cuts one without waiting for the age or the change
 check. The weekly version bump dispatches that same input after it commits.
@@ -138,8 +141,9 @@ Connect repository.
 
 Confirm Actions can grant the permissions the workflows request
 (Settings → Actions → General → Workflow permissions → Read and write).
-The image workflow asks for `contents: write` on the release job,
-`packages: write`, `id-token: write`, and `attestations: write`. The
+The image workflow asks for `contents: write` and `packages: write` on the
+release job, and `packages: write`, `id-token: write`, and
+`attestations: write` on each image job. The
 version-bump workflow asks for `contents: write` and `actions: write` on
 the publish job, and `issues: write` when a run fails. A repository
 maximum of read-only blocks those grants.

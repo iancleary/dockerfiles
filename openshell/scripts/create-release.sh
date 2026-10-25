@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Create the per-family calver git tag and GitHub release after images publish.
+# Tag every image with the calver and :latest, then create the git release.
+# The release job calls this only after every image manifest succeeded.
+# Digests are still checked first, and no image is tagged if one is missing.
 set -euo pipefail
 
 : "${GIT_TAG:?GIT_TAG is required}"
@@ -18,6 +20,50 @@ if [[ ! "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]; then
   printf 'GITHUB_SHA must be 40 lowercase hex characters\n' >&2
   exit 1
 fi
+
+images=(
+  agent-cli
+  python
+  rust
+  go
+  pi
+  codex
+  codex-pi
+  claude
+)
+
+registry=ghcr.io/iancleary
+refs=()
+for id in "${images[@]}"; do
+  var=DIGEST_${id//-/_}
+  if [[ ! -v $var ]]; then
+    printf 'refusing to tag any image; missing digest for %s\n' "$id" >&2
+    exit 1
+  fi
+  digest=${!var}
+  if [[ ! "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+    printf 'refusing to tag any image; missing digest for %s\n' "$id" >&2
+    exit 1
+  fi
+  refs+=("${registry}/openshell-${id}@${digest}")
+done
+
+if [[ -n "${OPENSHELL_RELEASE_PRINT:-}" ]]; then
+  for ref in "${refs[@]}"; do
+    image=${ref%@*}
+    printf '%s\n' -t "${image}:${IMAGE_VERSION}" -t "${image}:latest" "$ref"
+  done
+  printf 'git_tag=%s\n' "$GIT_TAG"
+  exit 0
+fi
+
+for ref in "${refs[@]}"; do
+  image=${ref%@*}
+  docker buildx imagetools create \
+    -t "${image}:${IMAGE_VERSION}" \
+    -t "${image}:latest" \
+    "$ref"
+done
 
 git fetch --tags origin
 if git rev-parse -q --verify "refs/tags/${GIT_TAG}^{}" >/dev/null; then
