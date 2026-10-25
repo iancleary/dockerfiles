@@ -178,7 +178,7 @@ expect_jobs .github/workflows/openshell-images.yml \
   "$(build_lines codex)" \
   "$(build_lines codex-pi)" \
   "$(build_lines claude)" \
-  "$(job_lines release "contents write")"
+  "$(job_lines release "contents write" "packages write")"
 expect_jobs .github/workflows/openshell-bump.yml \
   "$(job_lines bump "contents read")" \
   "$(job_lines verify "contents read")" \

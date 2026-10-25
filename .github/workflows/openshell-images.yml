@@ -366,10 +366,13 @@ jobs:
       (needs.plan.outputs.build_claude != 'true' || needs.claude.result == 'success')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    # contents: write creates the calver tag and GitHub Release.
-    # Dispatching other workflows is left to the bump publish job.
+    # contents: write creates the calver git tag and GitHub Release.
+    # packages: write moves the calver tag and :latest on every image.
+    # This job does not run when any manifest failed, so those tags move
+    # together. Dispatching other workflows is left to the bump publish job.
     permissions:
       contents: write
+      packages: write
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -377,9 +380,27 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
-      - name: Create calver release
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Log in to GHCR
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tag every image and create the calver release
         env:
           GIT_TAG: ${{ needs.plan.outputs.git_tag }}
           IMAGE_VERSION: ${{ needs.plan.outputs.image_version }}
           GH_TOKEN: ${{ github.token }}
+          DIGEST_agent_cli: ${{ needs.agent-cli.outputs.digest }}
+          DIGEST_python: ${{ needs.python.outputs.digest }}
+          DIGEST_rust: ${{ needs.rust.outputs.digest }}
+          DIGEST_go: ${{ needs.go.outputs.digest }}
+          DIGEST_pi: ${{ needs.pi.outputs.digest }}
+          DIGEST_codex: ${{ needs.codex.outputs.digest }}
+          DIGEST_codex_pi: ${{ needs.codex-pi.outputs.digest }}
+          DIGEST_claude: ${{ needs.claude.outputs.digest }}
         run: bash openshell/scripts/create-release.sh

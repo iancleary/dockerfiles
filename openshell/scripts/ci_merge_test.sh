@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Tag selection for the manifest list, and digest artifact names.
-# Does not call docker. Download patterns are matched the way
-# actions/download-artifact does: GitHub expressions first, then
-# minimatch with brace expansion left on.
+# Does not call docker. GitHub ${{ }} expressions below are literal text.
+# shellcheck disable=SC2016,SC1003
 set -euo pipefail
 
 root=$(cd -P -- "$(dirname -- "$0")/../.." && pwd -P)
@@ -39,18 +38,16 @@ fi
 
 out=$(
   OPENSHELL_MERGE_PRINT=1 \
-    IMAGE="$image" PUBLISH=release IMAGE_VERSION=2026.10.24.01 DIGEST_DIR="$tmp" \
+    IMAGE="$image" PUBLISH=release IMAGE_VERSION=2026.10.24.01 SHORT_SHA=0123456 DIGEST_DIR="$tmp" \
     bash "$merge"
 )
 expected=$(
   cat <<EOF
 -t
-${image}:2026.10.24.01
--t
-${image}:latest
+${image}:sha-0123456
 ${image}@sha256:${amd}
 ${image}@sha256:${arm}
-primary=${image}:2026.10.24.01
+primary=${image}:sha-0123456
 EOF
 )
 if [[ "$out" != "$expected" ]]; then
@@ -107,36 +104,6 @@ glob_match() {
   [[ "$name" =~ $regex ]]
 }
 
-expand_braces() {
-  local pat=$1 pre rest body post alt
-  local -a alts
-  if [[ "$pat" != *'{'* ]]; then
-    printf '%s\n' "$pat"
-    return
-  fi
-  pre=${pat%%'{'*}
-  rest=${pat#*'{'}
-  body=${rest%%'}'*}
-  post=${rest#*'}'}
-  if [[ "$body" == "$rest" ]]; then
-    printf 'unclosed brace in %s\n' "$pat" >&2
-    exit 1
-  fi
-  if [[ "$pre$body" == *'{'* || "$post" == *'{'* ]]; then
-    printf 'only one brace group is supported in %s\n' "$pat" >&2
-    exit 1
-  fi
-  local IFS=,
-  read -ra alts <<< "$body"
-  for alt in "${alts[@]}"; do
-    if [[ -z "$alt" || "$alt" == *' '* ]]; then
-      printf 'empty brace alternative in %s\n' "$pat" >&2
-      exit 1
-    fi
-    printf '%s\n' "${pre}${alt}${post}"
-  done
-}
-
 render_template() {
   local tmpl=$1 recipe=$2 suffix=$3 out
   out=${tmpl//'${{ inputs.recipe }}'/$recipe}
@@ -169,24 +136,48 @@ if glob_match 'digests-codex-pi-amd64' 'digests-codex-amd64'; then
   printf 'exact digest name matched a different recipe\n' >&2
   exit 1
 fi
-mapfile -t brace_fixture < <(expand_braces 'digests-codex-{amd64,arm64}')
-if [[ ${#brace_fixture[@]} -ne 2 \
-  || "${brace_fixture[0]}" != digests-codex-amd64 \
-  || "${brace_fixture[1]}" != digests-codex-arm64 ]]; then
-  printf 'brace fixture did not expand to the two arch names\n' >&2
-  exit 1
-fi
+
+# A star after the recipe matches another recipe when the names share a
+# hyphen. codex is a prefix of codex-pi, so digests-codex-* is not safe.
+scheme_overlaps() {
+  local tmpl=$1 recipe suffix name star
+  local -a names=()
+  local -A own=()
+  for recipe in "${recipes[@]}"; do
+    own["$recipe"]=""
+    for suffix in "${suffixes[@]}"; do
+      name=$(render_template "$tmpl" "$recipe" "$suffix")
+      names+=("$name")
+      own["$recipe"]+="${name}"$'\n'
+    done
+  done
+  for recipe in "${recipes[@]}"; do
+    star=${tmpl/'${{ matrix.suffix }}'/*}
+    star=$(render_template "$star" "$recipe" "")
+    local -a matches=()
+    for name in "${names[@]}"; do
+      if glob_match "$name" "$star"; then
+        matches+=("$name")
+      fi
+    done
+    local expected got
+    expected=$(printf '%s' "${own[$recipe]}" | sed '/^$/d' | sort)
+    got=$(printf '%s\n' "${matches[@]}" | sed '/^$/d' | sort)
+    if [[ "$expected" != "$got" ]]; then
+      printf 'artifact scheme overlaps for %s under %s\n' "$recipe" "$star" >&2
+      printf 'got:\n%s\nwant:\n%s\n' "$got" "$expected" >&2
+      return 0
+    fi
+  done
+  return 1
+}
 
 build_wf=$root/.github/workflows/openshell-build-image.yml
 images_wf=$root/.github/workflows/openshell-images.yml
-mapfile -t upload_lines < <(grep -E '^[[:space:]]+name:[[:space:]]+"?digests-' "$build_wf")
-mapfile -t pattern_lines < <(grep -E '^[[:space:]]+pattern:[[:space:]]+' "$build_wf")
-if [[ ${#upload_lines[@]} -ne 1 || ${#pattern_lines[@]} -ne 1 ]]; then
-  printf 'expected one digest upload name and one download pattern\n' >&2
+if grep -n -E '^[[:space:]]+pattern:' "$build_wf"; then
+  printf 'digest download must use an exact artifact name, not a pattern\n' >&2
   exit 1
 fi
-upload_tmpl=$(yaml_scalar "${upload_lines[0]}")
-pattern_tmpl=$(yaml_scalar "${pattern_lines[0]}")
 
 mapfile -t suffixes < <(grep -E '^[[:space:]]+suffix:[[:space:]]+' "$build_wf" | while IFS= read -r line; do yaml_scalar "$line"; done)
 suffix_set=" ${suffixes[*]} "
@@ -202,6 +193,55 @@ if [[ "${recipes[*]}" != "${expected_recipes[*]}" ]]; then
   exit 1
 fi
 
+if ! scheme_overlaps 'digests-${{ inputs.recipe }}-${{ matrix.suffix }}' 2>/dev/null; then
+  printf 'hyphen suffix scheme did not overlap for a prefix recipe\n' >&2
+  exit 1
+fi
+
+mapfile -t digest_names < <(
+  grep -E '^[[:space:]]+name:[[:space:]]+' "$build_wf" |
+    while IFS= read -r line; do yaml_scalar "$line"; done |
+    grep -F '${{ inputs.recipe }}' |
+    grep -E 'matrix\.suffix|_amd64|_arm64|-amd64|-arm64'
+)
+upload_tmpl=
+downloads=()
+for item in "${digest_names[@]}"; do
+  if [[ "$item" == *'${{ matrix.suffix }}'* ]]; then
+    if [[ -n "$upload_tmpl" ]]; then
+      printf 'more than one digest upload name\n' >&2
+      exit 1
+    fi
+    upload_tmpl=$item
+  else
+    downloads+=("$item")
+  fi
+done
+if [[ -z "$upload_tmpl" || ${#downloads[@]} -ne 2 ]]; then
+  printf 'expected one upload template and two exact arch downloads\n' >&2
+  printf '%s\n' "${digest_names[@]}" >&2
+  exit 1
+fi
+if scheme_overlaps "$upload_tmpl"; then
+  printf 'digest artifact names still overlap\n' >&2
+  exit 1
+fi
+for suffix in "${suffixes[@]}"; do
+  want=$(render_template "$upload_tmpl" 'PLACE' "$suffix")
+  want=${want/PLACE/'${{ inputs.recipe }}'}
+  found=false
+  for item in "${downloads[@]}"; do
+    if [[ "$item" == "$want" ]]; then
+      found=true
+    fi
+  done
+  if [[ "$found" != true ]]; then
+    printf 'download name for %s is not the upload name\n' "$suffix" >&2
+    printf 'want %s\n' "$want" >&2
+    exit 1
+  fi
+done
+
 # ci-build.sh accepts the same recipes the workflow publishes.
 mapfile -t build_recipes < <(
   grep -E '^[[:space:]]+agent-cli \|' "$root/openshell/scripts/ci-build.sh" |
@@ -214,42 +254,83 @@ if [[ "${build_recipes[*]}" != "${recipes[*]}" ]]; then
   exit 1
 fi
 
-all_names=()
-declare -A own_names=()
+if grep -n ':latest' "$merge" | grep -v -E '^[0-9]+:[[:space:]]*#'; then
+  printf 'per-image merge must not publish :latest\n' >&2
+  exit 1
+fi
+if ! grep -F -q "needs.plan.outputs.publish == 'release'" "$images_wf"; then
+  printf 'release job is not limited to publish=release\n' >&2
+  exit 1
+fi
 for recipe in "${recipes[@]}"; do
-  own_names["$recipe"]=""
-  for suffix in "${suffixes[@]}"; do
-    name=$(render_template "$upload_tmpl" "$recipe" "$suffix")
-    all_names+=("$name")
-    own_names["$recipe"]+="${name}"$'\n'
-  done
-done
-
-for recipe in "${recipes[@]}"; do
-  rendered=$(render_template "$pattern_tmpl" "$recipe" "")
-  mapfile -t pats < <(expand_braces "$rendered")
-  matches=()
-  for name in "${all_names[@]}"; do
-    for pat in "${pats[@]}"; do
-      if glob_match "$name" "$pat"; then
-        matches+=("$name")
-        break
-      fi
-    done
-  done
-  expected=$(printf '%s' "${own_names[$recipe]}" | sed '/^$/d' | sort)
-  got=$(printf '%s\n' "${matches[@]}" | sed '/^$/d' | sort)
-  if [[ "$expected" != "$got" ]]; then
-    printf 'digest pattern for %s does not match only its own artifacts\n' "$recipe" >&2
-    printf 'pattern: %s\n' "$rendered" >&2
-    printf 'got:\n%s\nwant:\n%s\n' "$got" "$expected" >&2
-    for other in "${recipes[@]}"; do
-      if [[ "$other" == "$recipe"-* ]]; then
-        printf '%s is a hyphen-prefix of %s\n' "$recipe" "$other" >&2
-      fi
-    done
+  if ! grep -F -q "needs.${recipe}.result == 'success'" "$images_wf"; then
+    printf 'release job does not require %s to succeed\n' "$recipe" >&2
     exit 1
   fi
 done
+callers=$(grep -l 'create-release.sh' "$root"/.github/workflows/*.yml)
+if [[ "$callers" != "$images_wf" ]]; then
+  printf 'create-release.sh is not only called by the image workflow\n' >&2
+  printf '%s\n' "$callers" >&2
+  exit 1
+fi
+
+release=$root/openshell/scripts/create-release.sh
+release_ids=(agent-cli python rust go pi codex codex-pi claude)
+for id in "${release_ids[@]}"; do
+  if ! grep -F -q "  ${id}" "$release"; then
+    printf 'create-release.sh is missing %s\n' "$id" >&2
+    exit 1
+  fi
+  var=DIGEST_${id//-/_}
+  if ! grep -F -q "${var}: \${{ needs.${id}.outputs.digest }}" "$images_wf"; then
+    printf 'release job does not pass %s\n' "$var" >&2
+    exit 1
+  fi
+done
+
+sha=0123456789abcdef0123456789abcdef01234567
+export GIT_TAG=openshell-2026.10.24.01
+export IMAGE_VERSION=2026.10.24.01
+export GITHUB_SHA=$sha
+export OPENSHELL_RELEASE_PRINT=1
+i=0
+for id in "${release_ids[@]}"; do
+  i=$((i + 1))
+  var=DIGEST_${id//-/_}
+  printf -v "$var" 'sha256:%s%s' "$i" "$(printf 'a%.0s' $(seq 1 63))"
+  export "${var?}"
+done
+out=$(bash "$release")
+for id in "${release_ids[@]}"; do
+  ref="ghcr.io/iancleary/openshell-${id}"
+  var=DIGEST_${id//-/_}
+  if ! grep -F -q -- "-t" <<<"$out" \
+    || ! grep -F -q "${ref}:${IMAGE_VERSION}" <<<"$out" \
+    || ! grep -F -q "${ref}:latest" <<<"$out" \
+    || ! grep -F -q "${ref}@${!var}" <<<"$out"; then
+    printf 'release tags missing for %s\n%s\n' "$id" "$out" >&2
+    exit 1
+  fi
+done
+if ! grep -F -q 'git_tag=openshell-2026.10.24.01' <<<"$out"; then
+  printf 'release print did not name the git tag\n%s\n' "$out" >&2
+  exit 1
+fi
+unset DIGEST_codex
+if out=$(bash "$release" 2>"$tmp/missing-digest"); then
+  printf 'missing codex digest still tagged images\n%s\n' "$out" >&2
+  exit 1
+fi
+if [[ -n "$out" ]]; then
+  printf 'missing digest printed tags before refusing\n%s\n' "$out" >&2
+  exit 1
+fi
+if ! grep -F -q 'refusing to tag any image; missing digest for codex' "$tmp/missing-digest"; then
+  printf 'missing digest did not name codex\n' >&2
+  cat "$tmp/missing-digest" >&2
+  exit 1
+fi
+unset OPENSHELL_RELEASE_PRINT
 
 printf 'digest artifact tests passed\n'

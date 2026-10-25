@@ -186,7 +186,9 @@ A token push does not start the image workflow, so the same job then
 dispatches OpenShell images with `publish=release`. That dispatch releases
 even when the newest calver is under three days old. `:edge` stays on the
 last push that the image workflow actually ran; the bot commit does not
-move it. `:latest` moves when the release finishes.
+move it. `:latest` and the calver tag move together in the release job,
+after every image manifest has succeeded. A failed manifest leaves both
+where they were.
 
 The daily image cron is 15:15 UTC (08:15 America/Phoenix). It still cannot
 say "every 3 days", so it runs every day and
