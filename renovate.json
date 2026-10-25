@@ -6,7 +6,7 @@
     "helpers:pinGitHubActionDigests"
   ],
   "prBodyNotes": [
-    "Image builds verify sha256 pins. If this PR changes a `*_VERSION` value or a harness `ARG`, update the matching checksum in `openshell/common/versions.env` or the harness `install-*.sh` in the same PR. The build fails until they match. Node stays on 24 and CPython stays on 3.13."
+    "Image builds verify sha256 pins. If this PR changes a `*_VERSION` value or a harness `ARG`, update the matching checksum in `openshell/common/versions.env` or the harness `install-*.sh` in the same PR. The build fails until they match. CPython stays on 3.13."
   ],
   "packageRules": [
     {
@@ -25,11 +25,6 @@
         "openshell-claude"
       ],
       "enabled": false
-    },
-    {
-      "matchDatasources": ["node-version"],
-      "matchPackageNames": ["node"],
-      "allowedVersions": "/^24\\./"
     },
     {
       "matchDatasources": ["github-releases"],
@@ -105,15 +100,9 @@
       "customType": "regex",
       "managerFilePatterns": ["/^openshell/pi/Dockerfile$/"],
       "matchStrings": ["ARG PI_VERSION=(?<currentValue>\\d+\\.\\d+\\.\\d+)"],
-      "depNameTemplate": "@earendil-works/pi-coding-agent",
-      "datasourceTemplate": "npm"
-    },
-    {
-      "customType": "regex",
-      "managerFilePatterns": ["/^openshell/pi/Dockerfile$/"],
-      "matchStrings": ["ARG NODE_VERSION=(?<currentValue>\\d+\\.\\d+\\.\\d+)"],
-      "depNameTemplate": "node",
-      "datasourceTemplate": "node-version"
+      "depNameTemplate": "earendil-works/pi",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v(?<version>\\d+\\.\\d+\\.\\d+)$"
     },
     {
       "customType": "regex",

@@ -76,8 +76,8 @@ Run workflow → `release` cuts one without waiting. `edge` republishes
 ## Supply chain
 
 `openshell-agent-cli` pins `debian:bookworm-slim` by tag and digest.
-Harness CLI versions are `ARG`s (`PI_VERSION`, `NODE_VERSION`,
-`CODEX_VERSION`, `CLAUDE_VERSION`). Shared toolchain versions live in
+Harness CLI versions are `ARG`s (`PI_VERSION`, `CODEX_VERSION`,
+`CLAUDE_VERSION`). Shared toolchain versions live in
 [`openshell/common/versions.env`](openshell/common/versions.env). Each image
 records the git SHA, image version, parent digest, and those pins as OCI
 labels, including `org.opencontainers.image.source`, which links the GHCR
@@ -87,8 +87,9 @@ package to this repo.
 and GitHub Action digests. Several pins are checked against a sha256 in
 `versions.env` or the harness `install-*.sh`. A version bump without the
 matching checksum fails the image build. Update both in the Renovate PR.
-Node stays on 24, and CPython stays on 3.13, because the Pi checksums and
-the Python install script are written for those lines.
+CPython stays on 3.13, because the Python install script is written for
+that line. Pi's checksums are the linux archive lines from the
+`earendil-works/pi` release `SHA256SUMS`.
 
 Workflow runs attest the arch images and the manifest list with
 `actions/attest-build-provenance` and sign them with keyless cosign

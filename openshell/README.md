@@ -21,7 +21,7 @@ rules live in the [repository README](../README.md).
 | `ghcr.io/iancleary/openshell-python` | [`python/Dockerfile`](python/Dockerfile) | agent-cli | `uv` 0.13.5, CPython 3.13.17, `pre-commit` 4.7.0 |
 | `ghcr.io/iancleary/openshell-rust` | [`rust/Dockerfile`](rust/Dockerfile) | agent-cli | rustc/cargo 1.99.1, `gcc` |
 | `ghcr.io/iancleary/openshell-go` | [`go/Dockerfile`](go/Dockerfile) | agent-cli | Go 1.27.3 |
-| `ghcr.io/iancleary/openshell-pi` | [`pi/Dockerfile`](pi/Dockerfile) | agent-cli, overridable | Node 24.22.1, Pi 1.4.0 |
+| `ghcr.io/iancleary/openshell-pi` | [`pi/Dockerfile`](pi/Dockerfile) | agent-cli, overridable | Pi 1.4.0 |
 | `ghcr.io/iancleary/openshell-codex` | [`codex/Dockerfile`](codex/Dockerfile) | agent-cli, overridable | Codex CLI 0.164.0 |
 | `ghcr.io/iancleary/openshell-claude` | [`claude/Dockerfile`](claude/Dockerfile) | agent-cli, overridable | Claude Code 2.1.309 |
 
@@ -94,7 +94,7 @@ digest push.
 
 | Image | Binary |
 | --- | --- |
-| pi | `/usr/local/bin/pi` (Node is on `PATH` too) |
+| pi | `/usr/local/bin/pi` (symlink to `/usr/local/lib/pi/pi`) |
 | codex | `/usr/local/bin/codex` |
 | claude | `/usr/local/bin/claude` |
 
