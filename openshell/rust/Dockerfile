@@ -5,9 +5,15 @@
 ARG BASE_IMAGE=openshell-agent-cli:phase1
 FROM ${BASE_IMAGE}
 
-COPY versions/rust.env rust/install-rust.sh /tmp/stack/
+# hadolint ignore=DL3066
+USER root
+COPY common/harden-runtime.sh versions/rust.env rust/install-rust.sh /tmp/stack/
 RUN bash /tmp/stack/install-rust.sh && rm -rf /tmp/stack
 
+# hadolint ignore=DL3066
+USER agent
+WORKDIR /tmp
+# OpenShell drops image ENV on sandbox exec, so pass CARGO_HOME again on exec.
 ENV CARGO_HOME=/tmp/cargo
 
 ARG IMAGE_TITLE=openshell-rust

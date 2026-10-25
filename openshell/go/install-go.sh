@@ -7,6 +7,8 @@ set -a
 # shellcheck disable=SC1091
 . "$here/go.env"
 set +a
+# shellcheck disable=SC1091
+. "$here/harden-runtime.sh"
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
@@ -32,7 +34,9 @@ esac
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 archive=$tmp/go.tgz
-curl -fsSL -o "$archive" "https://go.dev/dl/go${GO_VERSION}.linux-${go_arch}.tar.gz"
+curl -fsSL --proto '=https' --tlsv1.2 --retry 5 --retry-all-errors --retry-delay 2 \
+  --connect-timeout 20 --max-time 600 -o "$archive" \
+  "https://go.dev/dl/go${GO_VERSION}.linux-${go_arch}.tar.gz"
 echo "${go_sha}  ${archive}" | sha256sum -c -
 rm -rf /usr/local/go
 tar -C /usr/local -xzf "$archive"
@@ -40,6 +44,10 @@ ln -sfn /usr/local/go/bin/go /usr/local/bin/go
 ln -sfn /usr/local/go/bin/gofmt /usr/local/bin/gofmt
 go version
 
+install -d -m 0755 -o 1000 -g 1000 /tmp/go
+install -d -m 0755 -o 1000 -g 1000 /tmp/gocache
+
 apt-get purge -y curl
 apt-get autoremove -y
 rm -rf /var/lib/apt/lists/*
+harden_runtime

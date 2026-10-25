@@ -45,13 +45,15 @@ on:
 
 permissions:
   contents: read
-  packages: write
-  id-token: write
-  attestations: write
 
 jobs:
   build:
     name: ${{ inputs.recipe }} (${{ matrix.platform }})
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
     timeout-minutes: 40
     strategy:
       fail-fast: false
@@ -94,7 +96,7 @@ jobs:
           OPENSHELL_BASE_DIGEST: ${{ inputs.base_digest }}
         run: bash openshell/scripts/ci-build.sh
 
-      # Harness images are loaded, not pushed, by the build step. This runs
+      # Every image is loaded, not pushed, by the build step. This runs
       # the same script as `just openshell::smoke-*` before any registry write.
       - name: Smoke test
         if: steps.build.outputs.smoke == 'true'
@@ -146,6 +148,11 @@ jobs:
   merge:
     name: ${{ inputs.recipe }} manifest
     needs: build
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     outputs:

@@ -8,6 +8,8 @@ set -a
 # shellcheck disable=SC1091
 . "$here/tools.env"
 set +a
+# shellcheck disable=SC1091
+. "$here/harden-runtime.sh"
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
@@ -40,7 +42,8 @@ trap cleanup EXIT
 
 fetch_checked() {
   local url=$1 dest=$2 sha=$3
-  curl -fsSL -o "$dest" "$url"
+  curl -fsSL --proto '=https' --tlsv1.2 --retry 5 --retry-all-errors --retry-delay 2 \
+    --connect-timeout 20 --max-time 600 -o "$dest" "$url"
   echo "${sha}  ${dest}" | sha256sum -c -
 }
 
@@ -73,13 +76,7 @@ install -m 0755 "$just_bin" /usr/local/bin/just
 /usr/local/bin/fd --help | grep -q -- --no-require-git
 /usr/local/bin/rg --help | grep -q -- --no-config
 
-if ! getent group agent >/dev/null; then
-  groupadd --gid 1000 agent
-fi
-if ! id -u agent >/dev/null 2>&1; then
-  useradd --uid 1000 --gid 1000 --create-home --shell /bin/bash agent
-fi
-
 apt-get purge -y curl
 apt-get autoremove -y
 rm -rf /var/lib/apt/lists/*
+harden_runtime

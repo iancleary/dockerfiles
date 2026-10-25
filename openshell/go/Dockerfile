@@ -5,9 +5,15 @@
 ARG BASE_IMAGE=openshell-agent-cli:phase1
 FROM ${BASE_IMAGE}
 
-COPY versions/go.env go/install-go.sh /tmp/stack/
+# hadolint ignore=DL3066
+USER root
+COPY common/harden-runtime.sh versions/go.env go/install-go.sh /tmp/stack/
 RUN bash /tmp/stack/install-go.sh && rm -rf /tmp/stack
 
+# hadolint ignore=DL3066
+USER agent
+WORKDIR /tmp
+# OpenShell drops image ENV on sandbox exec, so pass these again on exec.
 ENV GOPATH=/tmp/go
 ENV GOCACHE=/tmp/gocache
 ENV GOMODCACHE=/tmp/go/pkg/mod

@@ -9,6 +9,8 @@ set -a
 # shellcheck disable=SC1091
 . "$here/rust.env"
 set +a
+# shellcheck disable=SC1091
+. "$here/harden-runtime.sh"
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
@@ -42,7 +44,8 @@ install_component() {
   local name=$1 sha=$2
   local archive="$tmp/${name}.tar.xz"
   local dest="$tmp/${name}"
-  curl -fsSL -o "$archive" \
+  curl -fsSL --proto '=https' --tlsv1.2 --retry 5 --retry-all-errors --retry-delay 2 \
+    --connect-timeout 20 --max-time 600 -o "$archive" \
     "https://static.rust-lang.org/dist/${name}-${RUST_VERSION}-${triple}.tar.xz"
   echo "${sha}  ${archive}" | sha256sum -c -
   mkdir -p "$dest"
@@ -61,6 +64,9 @@ install_component cargo "$cargo_sha"
 rustc --version
 cargo --version
 
+install -d -m 0755 -o 1000 -g 1000 /tmp/cargo
+
 apt-get purge -y curl xz-utils
 apt-get autoremove -y
 rm -rf /var/lib/apt/lists/*
+harden_runtime

@@ -9,8 +9,8 @@ FROM ${BASE_IMAGE}
 
 # hadolint ignore=DL3066
 USER root
-COPY versions/codex.env codex/install-codex.sh /tmp/codex/
-COPY versions/pi.env pi/install-pi.sh /tmp/pi/
+COPY common/harden-runtime.sh versions/codex.env codex/install-codex.sh /tmp/codex/
+COPY common/harden-runtime.sh versions/pi.env pi/install-pi.sh /tmp/pi/
 RUN bash /tmp/codex/install-codex.sh && rm -rf /tmp/codex \
  && bash /tmp/pi/install-pi.sh && rm -rf /tmp/pi
 

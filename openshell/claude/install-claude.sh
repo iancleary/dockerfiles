@@ -8,6 +8,8 @@ set -a
 # shellcheck disable=SC1091
 . "$here/claude.env"
 set +a
+# shellcheck disable=SC1091
+. "$here/harden-runtime.sh"
 
 : "${CLAUDE_VERSION:?CLAUDE_VERSION is required}"
 : "${CLAUDE_SHA256_AMD64:?CLAUDE_SHA256_AMD64 is required}"
@@ -37,7 +39,8 @@ esac
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 archive=$tmp/claude.tgz
-curl -fsSL -o "$archive" \
+curl -fsSL --proto '=https' --tlsv1.2 --retry 5 --retry-all-errors --retry-delay 2 \
+  --connect-timeout 20 --max-time 600 -o "$archive" \
   "https://github.com/anthropics/claude-code/releases/download/v${CLAUDE_VERSION}/claude-linux-${claude_arch}.tar.gz"
 echo "${claude_sha}  ${archive}" | sha256sum -c -
 tar -xzf "$archive" -C "$tmp"
@@ -49,3 +52,4 @@ claude --version
 apt-get purge -y curl
 apt-get autoremove -y
 rm -rf /var/lib/apt/lists/*
+harden_runtime

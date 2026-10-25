@@ -18,7 +18,7 @@ rules live in the [repository README](../README.md).
 | Image | Dockerfile | Base | What it adds |
 | --- | --- | --- | --- |
 | `ghcr.io/iancleary/openshell-agent-cli` | [`agent-cli/Dockerfile`](agent-cli/Dockerfile) | `debian:bookworm-slim` from [`versions/base.env`](versions/base.env) | `fd`, `rg`, `just` from [`versions/tools.env`](versions/tools.env), user `agent` uid 1000 |
-| `ghcr.io/iancleary/openshell-python` | [`python/Dockerfile`](python/Dockerfile) | agent-cli | `uv`, CPython, `pre-commit` from [`versions/python.env`](versions/python.env) |
+| `ghcr.io/iancleary/openshell-python` | [`python/Dockerfile`](python/Dockerfile) | agent-cli | `uv` and CPython from [`versions/python.env`](versions/python.env) |
 | `ghcr.io/iancleary/openshell-rust` | [`rust/Dockerfile`](rust/Dockerfile) | agent-cli | rustc/cargo from [`versions/rust.env`](versions/rust.env), `gcc` |
 | `ghcr.io/iancleary/openshell-go` | [`go/Dockerfile`](go/Dockerfile) | agent-cli | Go from [`versions/go.env`](versions/go.env) |
 | `ghcr.io/iancleary/openshell-pi` | [`pi/Dockerfile`](pi/Dockerfile) | agent-cli, overridable | Pi from [`versions/pi.env`](versions/pi.env) |
@@ -42,8 +42,9 @@ that holds each pin. Bookworm's `fd-find` package is 8.6.0, the binary is
 `fdfind`, and it has no `--no-require-git`, so the image installs the
 upstream `fd` release instead.
 
-`pre-commit` is only on the Python image. It runs hooks with CPython. The
-Rust and Go images stay free of that interpreter.
+`pre-commit` is not included. It can be added later. Hooks that need
+`nodeenv` or Node are out of scope. The Rust and Go images do not include
+CPython.
 
 ## Local build
 
@@ -70,7 +71,7 @@ this machine, tagged `openshell-<layer>:phase1`.
 | `openshell::codex-pi` | `openshell-codex-pi:phase1` after agent-cli |
 | `openshell::claude` | `openshell-claude:phase1` after agent-cli |
 | `openshell::pi-rust` | local-only `openshell-pi:rust` on `openshell-rust:phase1` |
-| `openshell::build` | `stacks`, then pi, codex, codex-pi, and claude |
+| `openshell::build` | `stacks`, then pi, codex, codex-pi, claude, then smoke every image |
 | `openshell::all` | same as `build` |
 
 `bash openshell/build.sh` builds only the shared floor. `build.sh` and these
@@ -112,7 +113,7 @@ reads the same files and passes `DEBIAN_IMAGE` for the agent-cli base.
 | --- | --- |
 | [`versions/base.env`](versions/base.env) | `DEBIAN_IMAGE` (`debian:bookworm-slim` by digest) |
 | [`versions/tools.env`](versions/tools.env) | `fd`, `rg`, `just` and both architectures' sha256 |
-| [`versions/python.env`](versions/python.env) | `uv` and sha256, CPython, `pre-commit` |
+| [`versions/python.env`](versions/python.env) | `uv` and sha256, CPython archive and sha256 |
 | [`versions/rust.env`](versions/rust.env) | rustc/cargo/rust-std version and sha256 |
 | [`versions/go.env`](versions/go.env) | Go version and sha256 |
 | [`versions/pi.env`](versions/pi.env) | Pi version and sha256 |
@@ -120,8 +121,8 @@ reads the same files and passes `DEBIAN_IMAGE` for the agent-cli base.
 | [`versions/claude.env`](versions/claude.env) | Claude Code version and sha256 |
 
 `openshell-codex-pi` has no version file of its own. Its Dockerfile copies
-`codex/install-codex.sh`, `pi/install-pi.sh`, and the two env files those
-scripts source. The weekly bump already rewrites those pins. There is no
+`common/harden-runtime.sh`, `codex/install-codex.sh`, `pi/install-pi.sh`, and
+the two env files those scripts source. The weekly bump already rewrites those pins. There is no
 Renovate config in this repo. `plan.sh` rebuilds `openshell-codex-pi` when
 either pin changes, when either install script changes, and when a file
 under `codex-pi/` changes. A Pi or Codex Dockerfile change that leaves the
@@ -133,8 +134,10 @@ files. The channel manifest still has a dist date; the install ignores it.
 Pi is the `pi-linux-*.tar.gz` tree from
 [earendil-works/pi](https://github.com/earendil-works/pi) releases, installed
 under `/usr/local/lib/pi` with `/usr/local/bin/pi` pointing at it. The image
-does not install Node. CPython and `pre-commit` are installed by `uv`, which checks
-those downloads, so only their versions are pinned.
+does not install Node. CPython is the pinned
+[python-build-standalone](https://github.com/astral-sh/python-build-standalone)
+`install_only_stripped` archive. `pre-commit` is not included. Hooks that
+need `nodeenv` or Node are out of scope.
 
 Refresh the pins from upstream with:
 
@@ -154,7 +157,7 @@ The release line is patch-only inside the pin that is already in the file:
 
 | Line | Tools | What moves |
 | --- | --- | --- |
-| minor | `fd`, `rg`, `just`, CPython, `pre-commit`, Rust, Go, Pi, Claude Code, and any other 1.x pin | Newest `major.minor.patch` on the pinned `major.minor` |
+| minor | `fd`, `rg`, `just`, CPython, Rust, Go, Pi, Claude Code, and any other 1.x pin | Newest `major.minor.patch` on the pinned `major.minor` |
 | zero | `uv`, Codex | Newest stable `0.x.y`. Routine releases move the middle number. Prereleases are skipped |
 
 A Rust train, a Go minor, or a Pi minor stays put until someone edits that
@@ -212,6 +215,45 @@ the Actions tab. The bump workflow's `contents: write` push also needs
 Workflow permissions set to read and write, and a ruleset that lets
 `github-actions[bot]` push to `main`.
 
+## Runtime user
+
+Every image ends as `agent`, uid 1000 and gid 1000. Install steps run as
+root and the final `USER` switches to `agent`. There is no sudo, the root
+password stays locked, and the image has no setuid or setgid files.
+`/usr/local` is owned by root and is not writable by `agent`. `/tmp` is the
+only world-writable path, and it keeps the sticky bit (`1777`). The agent
+home directory is writable by that user when the container filesystem is
+writable.
+
+Nothing in the finished image depends on root. Creating the user, running
+`apt-get`, and installing tools under `/usr/local` happen before the final
+`USER`. A sandbox policy that allows writes only under `/tmp`, and no
+network, still matches these images. OpenShell drops image `ENV` on
+`sandbox exec`, so pass the cache directories below again on exec. The
+smoke test runs `docker run` without `--user`, so a root default fails it.
+
+The CPython tree includes `pip`. It is not linked onto `PATH`, and `agent`
+cannot write the prefix. `pre-commit` is not included. Hooks that need
+`nodeenv` or Node are out of scope.
+
+## How downloads are checked
+
+Each archive pin is a sha256 in [`versions/`](versions/). The image build
+runs `sha256sum -c` and fails on a mismatch. `curl` uses HTTPS only
+(`--proto '=https' --tlsv1.2`). The weekly bump refuses a pin when two
+published checksums disagree, or when a checksum it expects cannot be read.
+GitHub artifact attestations are checked when the bump runs. A bad
+attestation refuses the pin. A release with no attestation keeps the sha256
+pin and records that sigstore did not sign it. Rust's
+`channel-rust-<version>.toml` signature is checked against the pinned Rust
+release key before the component hashes are stored.
+
+Debian packages installed with `apt-get` (`ca-certificates`, and the build
+tools `curl`, `xz-utils`, `gcc`, and `libc6-dev`) are a separate case. The
+base image is digest-pinned. `apt` checks Debian's archive signatures, and
+those package versions are not pinned in `versions/`. `curl` and `xz-utils`
+are removed before the final `USER`.
+
 ## What a harness image contains
 
 | Image | Binary |
@@ -225,9 +267,19 @@ Pi, Codex, and Claude are each the upstream release binary. The codex-pi image i
 
 ## Smoke tests
 
-`just openshell::all` builds the images and then runs these. Each one can also be run on its own. They use the local tag from the build (`openshell-pi:phase1`, and the same for Codex, Codex-Pi, and Claude). CI loads each harness image, runs this same script, and only then pushes that image by digest. The push replays the build from the builder cache and refuses to continue unless the pushed config digest is the image that was smoked. A failed smoke test pushes nothing. The non-harness images have no smoke step and still push by digest from the build.
+`just openshell::all` builds the images and then runs these, including the
+toolchain images and the combined Codex and Pi image. Each one can also be
+run on its own. They use the local tag from the build (`openshell-pi:phase1`,
+and the same pattern for the other images). CI loads every image, runs this
+same script, and only then pushes that image by digest. The push replays the
+build from the builder cache and refuses to continue unless the pushed config
+digest is the image that was smoked. A failed smoke test pushes nothing.
 
 ```sh
+just openshell::smoke-agent-cli
+just openshell::smoke-python
+just openshell::smoke-rust
+just openshell::smoke-go
 just openshell::smoke-pi
 just openshell::smoke-codex
 just openshell::smoke-codex-pi
@@ -242,9 +294,9 @@ pi --offline --no-extensions -e /smoke/extension.ts --help
 
 `--help` exits without a model call. A loaded extension prints its flag there. The test fails unless the output contains `--openshell-smoke` and `OPENSHELL_PI_EXTENSION_OK`. No API key is passed in.
 
-Codex and Claude have no check of that kind that stays offline and credential-free. Their smoke test is `--version`, and the output has to contain the version in `versions/codex.env` or `versions/claude.env`. The container has `--network none` for every harness.
+Codex and Claude have no check of that kind that stays offline and credential-free. Their smoke test is `--version`. The first version token on the first line has to equal the pin in `versions/codex.env` or `versions/claude.env`. A pin of `2.1.31` does not match output that says `2.1.310`. Pi uses the same rule. The container has `--network none` for every smoke test, and the command does not pass `--user`.
 
-The codex-pi check runs `pi --offline --version`, `codex --version`, `pi --offline --list-models`, `fd --version`, and `rg --version`. The versions have to match `versions/pi.env` and `versions/codex.env`. It also runs `id -u` and `id -un` and fails unless the user is `agent` with uid 1000. It loads the same Pi extension fixture as the Pi image.
+The codex-pi check runs `pi --offline --version`, `codex --version`, `pi --offline --list-models`, `fd --version`, and `rg --version`. Those versions have to equal the pins in `versions/pi.env` and `versions/codex.env`. It uses the same unprivileged checks as the other images and loads the same Pi extension fixture.
 
 OpenShell drops image `ENV` on `sandbox exec`. Pass `PI_CODING_AGENT_DIR`
 again on exec. The image default is `/tmp/pi-agent`. Callers may pass a
@@ -255,7 +307,7 @@ policy often allows writes under `/tmp` only:
 
 | Stack | Pass on exec |
 | --- | --- |
-| python | `UV_PYTHON_INSTALL_DIR=/usr/local/share/uv/python`, `UV_TOOL_DIR=/usr/local/share/uv/tools`, `UV_CACHE_DIR=/tmp/uv-cache` |
+| python | `UV_PYTHON_INSTALL_DIR=/usr/local/share/uv/python`, `UV_CACHE_DIR=/tmp/uv-cache` |
 | rust | `CARGO_HOME=/tmp/cargo` |
 | go | `GOPATH=/tmp/go`, `GOCACHE=/tmp/gocache`, `GOMODCACHE=/tmp/go/pkg/mod`, `CGO_ENABLED=0` |
 
