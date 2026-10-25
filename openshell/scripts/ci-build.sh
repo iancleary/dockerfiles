@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Native-arch build used by the OpenShell image workflow.
-# Pushes by digest only. The manifest job applies tags.
+# Harness images are loaded locally and not pushed. The smoke step runs
+# next, and ci-push.sh pushes that image by digest only if the smoke
+# passes. Other images still push by digest here. The manifest job applies tags.
 set -euo pipefail
 
 : "${PLATFORM:?PLATFORM is required}"
@@ -43,20 +45,41 @@ if [[ "$NO_CACHE" == "true" ]]; then
 fi
 meta=${RUNNER_TEMP}/meta.json
 flags+=(--metadata-file "$meta")
-flags+=(--output "type=image,name=${IMAGE},push-by-digest=true,name-canonical=true,push=true")
 
-export OPENSHELL_BUILDX=1
-export OPENSHELL_NO_TAG=1
-export OPENSHELL_BUILD_FLAGS="${flags[*]}"
-
-just "openshell::${RECIPE}"
-
-digest=$(jq -r '."containerimage.digest" // empty' "$meta")
-if [[ ! "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]; then
-  printf 'missing image digest in build metadata\n' >&2
-  exit 1
-fi
-
-mkdir -p "${RUNNER_TEMP}/digests"
-: >"${RUNNER_TEMP}/digests/${digest#sha256:}"
-printf 'digest=%s\n' "$digest" >>"$GITHUB_OUTPUT"
+case "$RECIPE" in
+  pi | codex | claude)
+    local_tag="openshell-ci-${RECIPE}:smoke"
+    case "$RECIPE" in
+      pi) export OPENSHELL_PI_TAG=$local_tag ;;
+      codex) export OPENSHELL_CODEX_TAG=$local_tag ;;
+      claude) export OPENSHELL_CLAUDE_TAG=$local_tag ;;
+    esac
+    flags+=(--output=type=docker)
+    export OPENSHELL_BUILDX=1
+    unset OPENSHELL_NO_TAG
+    export OPENSHELL_BUILD_FLAGS="${flags[*]}"
+    just "openshell::${RECIPE}"
+    if ! docker image inspect "$local_tag" >/dev/null 2>&1; then
+      printf 'build did not load %s\n' "$local_tag" >&2
+      exit 1
+    fi
+    printf 'smoke=true\n' >>"$GITHUB_OUTPUT"
+    printf 'local_tag=%s\n' "$local_tag" >>"$GITHUB_OUTPUT"
+    ;;
+  *)
+    flags+=(--output "type=image,name=${IMAGE},push-by-digest=true,name-canonical=true,push=true")
+    export OPENSHELL_BUILDX=1
+    export OPENSHELL_NO_TAG=1
+    export OPENSHELL_BUILD_FLAGS="${flags[*]}"
+    just "openshell::${RECIPE}"
+    digest=$(jq -r '."containerimage.digest" // empty' "$meta")
+    if [[ ! "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+      printf 'missing image digest in build metadata\n' >&2
+      exit 1
+    fi
+    mkdir -p "${RUNNER_TEMP}/digests"
+    : >"${RUNNER_TEMP}/digests/${digest#sha256:}"
+    printf 'smoke=false\n' >>"$GITHUB_OUTPUT"
+    printf 'digest=%s\n' "$digest" >>"$GITHUB_OUTPUT"
+    ;;
+esac

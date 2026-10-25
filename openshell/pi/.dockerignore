@@ -1,3 +1,1 @@
-# The Dockerfile copies install-pi.sh and nothing else from this directory.
-*
-!install-pi.sh
+# Docker uses openshell/.dockerignore. The build context is openshell/.

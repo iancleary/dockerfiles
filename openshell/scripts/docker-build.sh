@@ -14,7 +14,31 @@ tag=$3
 shift 3
 
 root=$(cd -P -- "$(dirname -- "$0")/.." && pwd -P)
-versions_file=$root/common/versions.env
+versions_dir=$root/versions
+
+lookup_version() {
+  local key=$1 file val hits=()
+  if [[ ! "$key" =~ ^[A-Z0-9_]+$ ]]; then
+    printf 'invalid version key: %s\n' "$key" >&2
+    exit 1
+  fi
+  for file in "$versions_dir"/*.env; do
+    [[ -f "$file" ]] || continue
+    if grep -q -E "^${key}=" "$file"; then
+      hits+=("$file")
+    fi
+  done
+  if [[ ${#hits[@]} -ne 1 ]]; then
+    printf 'version pin %s must appear in exactly one file under versions/\n' "$key" >&2
+    exit 1
+  fi
+  val=$(grep -E "^${key}=" "${hits[0]}" | head -1 | cut -d= -f2-)
+  if [[ -z "$val" ]]; then
+    printf 'missing version pin %s\n' "$key" >&2
+    exit 1
+  fi
+  printf '%s' "$val"
+}
 
 if [[ ! -f "$dockerfile" || ! -d "$context" ]]; then
   printf 'missing Dockerfile or context\n' >&2
@@ -44,14 +68,19 @@ if grep -q '^ARG BASE_IMAGE=' "$dockerfile"; then
   base_args+=(--build-arg "BASE_IMAGE=${base_image}")
 fi
 
-if [[ -n "${OPENSHELL_BASE_DIGEST:-}" ]]; then
-  base_digest=$OPENSHELL_BASE_DIGEST
-elif grep -q '^FROM debian:' "$dockerfile"; then
-  base_digest=$(sed -n 's/^FROM debian:.*@\(sha256:[a-f0-9]\{64\}\).*/\1/p' "$dockerfile" | head -1)
-  if [[ -z "$base_digest" ]]; then
-    printf '%s base image is not pinned by digest\n' "$image_title" >&2
+debian_image=
+if grep -q '^ARG DEBIAN_IMAGE$' "$dockerfile"; then
+  debian_image=$(lookup_version DEBIAN_IMAGE)
+  if [[ ! "$debian_image" =~ ^debian:bookworm-slim@sha256:[a-f0-9]{64}$ ]]; then
+    printf 'DEBIAN_IMAGE must be debian:bookworm-slim pinned by digest\n' >&2
     exit 1
   fi
+fi
+
+if [[ -n "${OPENSHELL_BASE_DIGEST:-}" ]]; then
+  base_digest=$OPENSHELL_BASE_DIGEST
+elif [[ -n "$debian_image" ]]; then
+  base_digest=${debian_image##*@}
 elif [[ -n "$base_image" ]] && docker image inspect "$base_image" >/dev/null 2>&1; then
   repo_digest=$(docker image inspect "$base_image" --format '{{if .RepoDigests}}{{index .RepoDigests 0}}{{end}}')
   if [[ "$repo_digest" == *@sha256:* ]]; then
@@ -74,21 +103,7 @@ fi
 
 tool_parts=()
 for key in "$@"; do
-  if [[ ! "$key" =~ ^[A-Z0-9_]+$ ]]; then
-    printf 'invalid version key: %s\n' "$key" >&2
-    exit 1
-  fi
-  val=
-  if [[ -f "$versions_file" ]] && grep -q -E "^${key}=" "$versions_file"; then
-    val=$(grep -E "^${key}=" "$versions_file" | head -1 | cut -d= -f2-)
-  fi
-  if [[ -z "$val" ]]; then
-    val=$(sed -n "s/^ARG ${key}=//p" "$dockerfile" | head -1 | tr -d '[:space:]')
-  fi
-  if [[ -z "$val" ]]; then
-    printf 'missing version pin %s\n' "$key" >&2
-    exit 1
-  fi
+  val=$(lookup_version "$key")
   tool_parts+=("${key}=${val}")
 done
 tool_versions=$(IFS=,; printf '%s' "${tool_parts[*]}")
@@ -118,6 +133,9 @@ cmd+=(
 )
 if ((${#base_args[@]})); then
   cmd+=("${base_args[@]}")
+fi
+if [[ -n "$debian_image" ]]; then
+  cmd+=(--build-arg "DEBIAN_IMAGE=${debian_image}")
 fi
 if [[ -z "${OPENSHELL_NO_TAG:-}" ]]; then
   cmd+=(-t "$tag")

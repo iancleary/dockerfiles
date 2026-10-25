@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 # Official rustc, cargo, and rust-std. No rustup installer and no agent CLI.
+# The tarballs are the dateless dist files. channel-rust-<version>.toml
+# still records a dist date; the install does not use it.
 set -euo pipefail
 
 here=$(cd -- "$(dirname -- "$0")" && pwd)
 set -a
 # shellcheck disable=SC1091
-. "$here/versions.env"
+. "$here/rust.env"
 set +a
 
 export DEBIAN_FRONTEND=noninteractive
@@ -41,7 +43,7 @@ install_component() {
   local archive="$tmp/${name}.tar.xz"
   local dest="$tmp/${name}"
   curl -fsSL -o "$archive" \
-    "https://static.rust-lang.org/dist/${RUST_DIST_DATE}/${name}-${RUST_VERSION}-${triple}.tar.xz"
+    "https://static.rust-lang.org/dist/${name}-${RUST_VERSION}-${triple}.tar.xz"
   echo "${sha}  ${archive}" | sha256sum -c -
   mkdir -p "$dest"
   tar -xJf "$archive" -C "$dest"

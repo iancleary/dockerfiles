@@ -1,15 +1,15 @@
 # Pi on a shared OpenShell base. The default base is the agent-cli floor.
 # Pass BASE_IMAGE=openshell-rust:phase1 (or python, or go) to stack a toolchain,
-# and tag that build yourself. Pi is the standalone release binary.
+# and tag that build yourself. The build context is the openshell directory.
+# The Pi release lives in versions/pi.env.
 
 ARG BASE_IMAGE=openshell-agent-cli:phase1
 FROM ${BASE_IMAGE}
 
 # hadolint ignore=DL3066
 USER root
-ARG PI_VERSION=1.4.0
-COPY install-pi.sh /tmp/install-pi.sh
-RUN PI_VERSION="$PI_VERSION" bash /tmp/install-pi.sh && rm -f /tmp/install-pi.sh
+COPY versions/pi.env pi/install-pi.sh /tmp/pi/
+RUN bash /tmp/pi/install-pi.sh && rm -rf /tmp/pi
 
 # hadolint ignore=DL3066
 USER agent

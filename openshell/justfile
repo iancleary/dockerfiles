@@ -1,7 +1,9 @@
 # Local OpenShell image builds. Docker must already be running.
 # Images stay on this machine as openshell-<layer>:phase1.
 # CI calls these same recipes with OPENSHELL_BASE_IMAGE set to the parent
-# digest and OPENSHELL_BUILD_FLAGS set for a digest-only push.
+# digest. Harness builds load the image and smoke-test it before the push
+# step sets OPENSHELL_BUILD_FLAGS for a digest-only push. Other images
+# push by digest from the build.
 
 set shell := ["bash", "-euo", "pipefail", "-c"]
 
@@ -79,7 +81,7 @@ pi: _require-docker
     if [[ -z "${OPENSHELL_BASE_IMAGE:-}" ]]; then
       just --justfile {{ quote(justfile()) }} agent-cli
     fi
-    bash {{ quote(build_script) }} {{ quote(images / "pi" / "Dockerfile") }} {{ quote(images / "pi") }} {{ quote(pi_tag) }} PI_VERSION
+    bash {{ quote(build_script) }} {{ quote(images / "pi" / "Dockerfile") }} {{ quote(images) }} {{ quote(pi_tag) }} PI_VERSION
 
 # Build openshell-codex:phase1 on agent-cli.
 codex: _require-docker
@@ -88,7 +90,7 @@ codex: _require-docker
     if [[ -z "${OPENSHELL_BASE_IMAGE:-}" ]]; then
       just --justfile {{ quote(justfile()) }} agent-cli
     fi
-    bash {{ quote(build_script) }} {{ quote(images / "codex" / "Dockerfile") }} {{ quote(images / "codex") }} {{ quote(codex_tag) }} CODEX_VERSION
+    bash {{ quote(build_script) }} {{ quote(images / "codex" / "Dockerfile") }} {{ quote(images) }} {{ quote(codex_tag) }} CODEX_VERSION
 
 # Build openshell-claude:phase1 on agent-cli.
 claude: _require-docker
@@ -97,14 +99,35 @@ claude: _require-docker
     if [[ -z "${OPENSHELL_BASE_IMAGE:-}" ]]; then
       just --justfile {{ quote(justfile()) }} agent-cli
     fi
-    bash {{ quote(build_script) }} {{ quote(images / "claude" / "Dockerfile") }} {{ quote(images / "claude") }} {{ quote(claude_tag) }} CLAUDE_VERSION
+    bash {{ quote(build_script) }} {{ quote(images / "claude" / "Dockerfile") }} {{ quote(images) }} {{ quote(claude_tag) }} CLAUDE_VERSION
 
 # Build local-only openshell-pi:rust on the rust stack. Not a published package.
 pi-rust: rust
     #!/usr/bin/env bash
     set -euo pipefail
     OPENSHELL_BASE_IMAGE=openshell-rust:phase1 \
-      bash {{ quote(build_script) }} {{ quote(images / "pi" / "Dockerfile") }} {{ quote(images / "pi") }} openshell-pi:rust PI_VERSION
+      bash {{ quote(build_script) }} {{ quote(images / "pi" / "Dockerfile") }} {{ quote(images) }} openshell-pi:rust PI_VERSION
 
-# Build the shared floor and the three default harness images.
-all: stacks pi codex claude
+# Build the shared floor and the three default harness images, then smoke-test them.
+all: stacks pi codex claude smoke
+
+# Load a mounted TypeScript extension inside the Pi image.
+smoke-pi: pi
+    #!/usr/bin/env bash
+    set -euo pipefail
+    bash {{ quote(images / "scripts" / "smoke-image.sh") }} pi {{ quote(pi_tag) }}
+
+# Run codex --version in the image. No credentialed check.
+smoke-codex: codex
+    #!/usr/bin/env bash
+    set -euo pipefail
+    bash {{ quote(images / "scripts" / "smoke-image.sh") }} codex {{ quote(codex_tag) }}
+
+# Run claude --version in the image. No credentialed check.
+smoke-claude: claude
+    #!/usr/bin/env bash
+    set -euo pipefail
+    bash {{ quote(images / "scripts" / "smoke-image.sh") }} claude {{ quote(claude_tag) }}
+
+# Smoke-test the three harness images.
+smoke: smoke-pi smoke-codex smoke-claude

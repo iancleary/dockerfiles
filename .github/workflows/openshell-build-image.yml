@@ -81,7 +81,7 @@ jobs:
       - name: Install just
         run: bash openshell/scripts/install-just.sh
 
-      - name: Build and push by digest
+      - name: Build image
         id: build
         env:
           PLATFORM: ${{ matrix.platform }}
@@ -94,11 +94,34 @@ jobs:
           OPENSHELL_BASE_DIGEST: ${{ inputs.base_digest }}
         run: bash openshell/scripts/ci-build.sh
 
+      # Harness images are loaded, not pushed, by the build step. This runs
+      # the same script as `just openshell::smoke-*` before any registry write.
+      - name: Smoke test
+        if: steps.build.outputs.smoke == 'true'
+        env:
+          RECIPE: ${{ inputs.recipe }}
+          LOCAL_TAG: ${{ steps.build.outputs.local_tag }}
+        run: bash openshell/scripts/smoke-image.sh "$RECIPE" "$LOCAL_TAG"
+
+      - name: Push smoked image by digest
+        id: push
+        if: steps.build.outputs.smoke == 'true'
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          IMAGE: ${{ inputs.image }}
+          RECIPE: ${{ inputs.recipe }}
+          NO_CACHE: ${{ inputs.no_cache }}
+          OPENSHELL_GIT_SHA: ${{ inputs.git_sha }}
+          OPENSHELL_IMAGE_VERSION: ${{ inputs.image_version }}
+          OPENSHELL_BASE_IMAGE: ${{ inputs.base_image }}
+          OPENSHELL_BASE_DIGEST: ${{ inputs.base_digest }}
+        run: bash openshell/scripts/ci-push.sh
+
       - name: Attest arch image
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: ${{ inputs.image }}
-          subject-digest: ${{ steps.build.outputs.digest }}
+          subject-digest: ${{ steps.push.outputs.digest || steps.build.outputs.digest }}
           push-to-registry: true
 
       - name: Install cosign
@@ -110,7 +133,7 @@ jobs:
         run: cosign sign --yes "${IMAGE}@${DIGEST}"
         env:
           IMAGE: ${{ inputs.image }}
-          DIGEST: ${{ steps.build.outputs.digest }}
+          DIGEST: ${{ steps.push.outputs.digest || steps.build.outputs.digest }}
 
       - name: Upload digest
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

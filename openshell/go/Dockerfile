@@ -5,7 +5,7 @@
 ARG BASE_IMAGE=openshell-agent-cli:phase1
 FROM ${BASE_IMAGE}
 
-COPY common/versions.env go/install-go.sh /tmp/stack/
+COPY versions/go.env go/install-go.sh /tmp/stack/
 RUN bash /tmp/stack/install-go.sh && rm -rf /tmp/stack
 
 ENV GOPATH=/tmp/go

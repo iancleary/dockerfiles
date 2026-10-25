@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Install the just pin from openshell/common/versions.env onto PATH.
+# Install the just pin from openshell/versions/tools.env onto PATH.
 set -euo pipefail
 
 root=$(cd -P -- "$(dirname -- "$0")/.." && pwd -P)
 set -a
 # shellcheck disable=SC1091
-. "$root/common/versions.env"
+. "$root/versions/tools.env"
 set +a
 
 case "$(uname -m)" in

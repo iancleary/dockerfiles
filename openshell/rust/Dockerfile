@@ -5,7 +5,7 @@
 ARG BASE_IMAGE=openshell-agent-cli:phase1
 FROM ${BASE_IMAGE}
 
-COPY common/versions.env rust/install-rust.sh /tmp/stack/
+COPY versions/rust.env rust/install-rust.sh /tmp/stack/
 RUN bash /tmp/stack/install-rust.sh && rm -rf /tmp/stack
 
 ENV CARGO_HOME=/tmp/cargo

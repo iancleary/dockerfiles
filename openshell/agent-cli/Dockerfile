@@ -2,11 +2,13 @@
 # fd, rg, and just are installed here so agents do not download them at runtime.
 # Language toolchains and agent CLIs stay in later images.
 # There is no separate common image. This layer is the shared base.
-# The digest is the bookworm-slim multi-arch index. Renovate keeps the tag.
+# The base pin is versions/base.env. docker-build.sh passes DEBIAN_IMAGE.
 
-FROM debian:bookworm-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8
+ARG DEBIAN_IMAGE
+# hadolint ignore=DL3006
+FROM ${DEBIAN_IMAGE}
 
-COPY common/install-agent-cli.sh common/versions.env /tmp/agent-cli/
+COPY common/install-agent-cli.sh versions/tools.env /tmp/agent-cli/
 RUN bash /tmp/agent-cli/install-agent-cli.sh && rm -rf /tmp/agent-cli
 
 ARG IMAGE_TITLE=openshell-agent-cli
