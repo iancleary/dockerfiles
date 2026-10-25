@@ -107,7 +107,7 @@ dupes=$(grep -h -E '^[A-Z0-9_]+=' openshell/versions/*.env | cut -d= -f1 | sort 
 debian=$(grep -E '^DEBIAN_IMAGE=' openshell/versions/base.env | cut -d= -f2-)
 [[ "$debian" =~ ^debian:bookworm-slim@sha256:[a-f0-9]{64}$ ]] || fail "bad DEBIAN_IMAGE"
 
-grep -q 'cron: "0 16 \* \* 1"' .github/workflows/openshell-bump.yml || fail "bump cron"
+grep -q 'cron: "0 13 \* \* 1"' .github/workflows/openshell-bump.yml || fail "bump cron"
 grep -q 'contents: write' .github/workflows/openshell-bump.yml || fail "contents write"
 grep -q 'actions: write' .github/workflows/openshell-bump.yml || fail "actions write"
 grep -q 'issues: write' .github/workflows/openshell-bump.yml || fail "issues write"

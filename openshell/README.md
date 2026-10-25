@@ -169,7 +169,7 @@ version, separate from the Action pin, and this script leaves it alone.
 ## Weekly bump and the release gate
 
 [`.github/workflows/openshell-bump.yml`](../.github/workflows/openshell-bump.yml)
-runs Mondays at 16:00 UTC (09:00 America/Phoenix, which stays UTC-7).
+runs Mondays at 13:00 UTC (06:00 America/Phoenix, which stays UTC-7).
 Actions → OpenShell version bump → Run workflow starts the same jobs.
 The cron is UTC and GitHub can start it late.
 
@@ -201,8 +201,8 @@ the two image workflows. Age is calendar days in the tag name. A manual
 `release` dispatch, including the one from the bump workflow, skips both
 gates. `edge` republishes `:edge` and `:sha-<7>`.
 
-The Monday bump is scheduled after that daily plan so the two jobs do not
-choose a calver at the same moment. They still share nothing but the image
+The Monday bump is at 06:00 America/Phoenix, before the 08:15 daily plan,
+so the two jobs do not choose a calver at the same moment. They still share nothing but the image
 workflow's own queue: the bump uses a separate concurrency group, because
 the dispatch would wait forever if this workflow held the image group.
 
