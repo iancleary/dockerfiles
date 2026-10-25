@@ -19,6 +19,7 @@ rust_tag := env_var_or_default("OPENSHELL_RUST_TAG", "openshell-rust:phase1")
 go_tag := env_var_or_default("OPENSHELL_GO_TAG", "openshell-go:phase1")
 pi_tag := env_var_or_default("OPENSHELL_PI_TAG", "openshell-pi:phase1")
 codex_tag := env_var_or_default("OPENSHELL_CODEX_TAG", "openshell-codex:phase1")
+codex_pi_tag := env_var_or_default("OPENSHELL_CODEX_PI_TAG", "openshell-codex-pi:phase1")
 claude_tag := env_var_or_default("OPENSHELL_CLAUDE_TAG", "openshell-claude:phase1")
 
 # List image recipes without building.
@@ -95,6 +96,15 @@ codex: _require-docker
     fi
     bash {{ quote(build_script) }} {{ quote(images / "codex" / "Dockerfile") }} {{ quote(images) }} {{ quote(codex_tag) }} CODEX_VERSION
 
+# Build openshell-codex-pi:phase1 on agent-cli. Codex and Pi, same install scripts.
+codex-pi: _require-docker
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [[ -z "${OPENSHELL_BASE_IMAGE:-}" ]]; then
+      just --justfile {{ quote(module_just) }} agent-cli
+    fi
+    bash {{ quote(build_script) }} {{ quote(images / "codex-pi" / "Dockerfile") }} {{ quote(images) }} {{ quote(codex_pi_tag) }} CODEX_VERSION PI_VERSION
+
 # Build openshell-claude:phase1 on agent-cli.
 claude: _require-docker
     #!/usr/bin/env bash
@@ -111,8 +121,8 @@ pi-rust: rust
     OPENSHELL_BASE_IMAGE=openshell-rust:phase1 \
       bash {{ quote(build_script) }} {{ quote(images / "pi" / "Dockerfile") }} {{ quote(images) }} openshell-pi:rust PI_VERSION
 
-# Build the shared floor and the three default harness images, then smoke-test them.
-all: stacks pi codex claude smoke
+# Build the shared floor and the default harness images, then smoke-test them.
+all: stacks pi codex codex-pi claude smoke
 
 # Load a mounted TypeScript extension inside the Pi image.
 smoke-pi: pi
@@ -126,11 +136,17 @@ smoke-codex: codex
     set -euo pipefail
     bash {{ quote(images / "scripts" / "smoke-image.sh") }} codex {{ quote(codex_tag) }}
 
+# Run pi and codex in the combined image. No credentialed check.
+smoke-codex-pi: codex-pi
+    #!/usr/bin/env bash
+    set -euo pipefail
+    bash {{ quote(images / "scripts" / "smoke-image.sh") }} codex-pi {{ quote(codex_pi_tag) }}
+
 # Run claude --version in the image. No credentialed check.
 smoke-claude: claude
     #!/usr/bin/env bash
     set -euo pipefail
     bash {{ quote(images / "scripts" / "smoke-image.sh") }} claude {{ quote(claude_tag) }}
 
-# Smoke-test the three harness images.
-smoke: smoke-pi smoke-codex smoke-claude
+# Smoke-test the harness images.
+smoke: smoke-pi smoke-codex smoke-codex-pi smoke-claude

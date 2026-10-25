@@ -30,7 +30,7 @@ expect_fallback() {
   fi
 }
 
-for recipe in python rust go pi codex claude; do
+for recipe in python rust go pi codex codex-pi claude; do
   expect_fallback "$recipe"
 done
 

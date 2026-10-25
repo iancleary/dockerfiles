@@ -4,7 +4,7 @@
 set -euo pipefail
 
 if [[ $# -ne 2 ]]; then
-  printf 'usage: smoke-image.sh pi|codex|claude IMAGE\n' >&2
+  printf 'usage: smoke-image.sh pi|codex|codex-pi|claude IMAGE\n' >&2
   exit 2
 fi
 
@@ -45,29 +45,56 @@ expect_version() {
   fi
 }
 
+smoke_pi_extension() {
+  local fixture=$root/openshell/pi/smoke/extension.ts help
+  [[ -f "$fixture" ]] || {
+    printf 'missing Pi extension fixture\n' >&2
+    exit 1
+  }
+  help=$(
+    timeout 120 docker run --rm --network none \
+      --entrypoint pi \
+      -e PI_OFFLINE=1 \
+      -e PI_CODING_AGENT_DIR=/tmp/pi-agent \
+      -v "$fixture:/smoke/extension.ts:ro" \
+      "$image" \
+      --offline --no-extensions -e /smoke/extension.ts --help
+  )
+  if ! grep -F -q -- '--openshell-smoke' <<<"$help" \
+    || ! grep -F -q -- 'OPENSHELL_PI_EXTENSION_OK' <<<"$help"; then
+    printf 'Pi did not load the extension\n%s\n' "$help" >&2
+    exit 1
+  fi
+}
+
+expect_agent_user() {
+  local uid name
+  uid=$(run_cli id -u)
+  name=$(run_cli id -un)
+  uid=${uid//[[:space:]]/}
+  name=${name//[[:space:]]/}
+  if [[ "$uid" != "1000" || "$name" != "agent" ]]; then
+    printf 'expected user agent (uid 1000), got %s (%s)\n' "$name" "$uid" >&2
+    exit 1
+  fi
+}
+
 case "$recipe" in
   pi)
     version=$(run_cli pi --offline --version)
     expect_version PI_VERSION "$root/openshell/versions/pi.env" "$version"
-    fixture=$root/openshell/pi/smoke/extension.ts
-    [[ -f "$fixture" ]] || {
-      printf 'missing Pi extension fixture\n' >&2
-      exit 1
-    }
-    help=$(
-      timeout 120 docker run --rm --network none \
-        --entrypoint pi \
-        -e PI_OFFLINE=1 \
-        -e PI_CODING_AGENT_DIR=/tmp/pi-agent \
-        -v "$fixture:/smoke/extension.ts:ro" \
-        "$image" \
-        --offline --no-extensions -e /smoke/extension.ts --help
-    )
-    if ! grep -F -q -- '--openshell-smoke' <<<"$help" \
-      || ! grep -F -q -- 'OPENSHELL_PI_EXTENSION_OK' <<<"$help"; then
-      printf 'Pi did not load the extension\n%s\n' "$help" >&2
-      exit 1
-    fi
+    smoke_pi_extension
+    ;;
+  codex-pi)
+    version=$(run_cli pi --offline --version)
+    expect_version PI_VERSION "$root/openshell/versions/pi.env" "$version"
+    version=$(run_cli codex --version)
+    expect_version CODEX_VERSION "$root/openshell/versions/codex.env" "$version"
+    run_cli pi --offline --list-models >/dev/null
+    run_cli fd --version >/dev/null
+    run_cli rg --version >/dev/null
+    expect_agent_user
+    smoke_pi_extension
     ;;
   codex)
     version=$(run_cli codex --version)
