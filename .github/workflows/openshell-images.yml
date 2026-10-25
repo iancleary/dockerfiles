@@ -69,6 +69,7 @@ jobs:
           bash openshell/scripts/ci_merge_test.sh
           bash openshell/scripts/privacy-grep.sh
           bash openshell/scripts/bump_versions_test.sh
+          bash openshell/scripts/smoke_test.sh
 
       - name: Plan
         id: plan

@@ -200,9 +200,31 @@ Workflow permissions set to read and write, and a ruleset that lets
 
 | Image | Binary |
 | --- | --- |
-| pi | `/usr/local/bin/pi` (Node is on `PATH` too) |
+| pi | `/usr/local/bin/pi` (the Node tarball is on `PATH` too) |
 | codex | `/usr/local/bin/codex` |
 | claude | `/usr/local/bin/claude` |
+
+The Pi image install extracts the official Node distribution, so `node`, `npm`, and `npx` are on `PATH`. The install checks `node --version` and then stops using them. Pi itself is the GitHub release binary. Extensions run inside that binary, not under system Node. Codex and Claude are each a single release binary. Their Dockerfiles, install scripts, and entrypoints do not install Node and do not call `node`, `npm`, or `npx`. None of the three images bake an MCP server or an `npx` command. Node stays on the Pi image because that is the published contract. It is unused by the image's own entrypoint, so a later change could drop it from Pi without affecting Codex or Claude.
+
+## Smoke tests
+
+`just openshell::all` builds the images and then runs these. Each one can also be run on its own. They use the local tag from the build (`openshell-pi:phase1`, and the same for Codex and Claude). CI loads each harness image, runs this same script, and only then pushes that image by digest. The push replays the build from the builder cache and refuses to continue unless the pushed config digest is the image that was smoked. A failed smoke test pushes nothing. The non-harness images have no smoke step and still push by digest from the build.
+
+```sh
+just openshell::smoke-pi
+just openshell::smoke-codex
+just openshell::smoke-claude
+```
+
+The Pi check mounts [`pi/smoke/extension.ts`](pi/smoke/extension.ts) into a throwaway container (`docker run --rm --network none`). That file is the only fixture. `pi/smoke` is in the build's dockerignore, and the Dockerfile does not copy it, so it is not in the published image. Pi 1.4.0 gives extensions `@earendil-works/pi-coding-agent` and `typebox` (see the upstream `docs/packages.md` shipped in that release). The fixture reads `VERSION` from `@earendil-works/pi-coding-agent` and builds a TypeBox object. A type-only import is not enough: Pi still exits 0 from `--help` when an import fails, and it omits the flag. The container runs:
+
+```sh
+pi --offline --no-extensions -e /smoke/extension.ts --help
+```
+
+`--help` exits without a model call. A loaded extension prints its flag there. The test fails unless the output contains `--openshell-smoke` and `OPENSHELL_PI_EXTENSION_OK`. No API key is passed in.
+
+Codex and Claude have no check of that kind that stays offline and credential-free. Their smoke test is `--version`, and the output has to contain the version in `versions/codex.env` or `versions/claude.env`. The container has `--network none` for all three.
 
 OpenShell drops image `ENV` on `sandbox exec`. Pass `PI_CODING_AGENT_DIR`
 again on exec. The image default is `/tmp/pi-agent`. Callers may pass a

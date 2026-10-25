@@ -6,7 +6,8 @@ name: OpenShell version bump
 # the publish job dispatches OpenShell images with publish=release, which
 # skips the age and change gates.
 #
-# Verify builds the images and does not push them. A failed verify commits
+# Verify builds the images, smoke-tests the harness images, and does not
+# push them. A failed verify commits
 # nothing. The concurrency group is not the image workflow's group: sharing
 # it would deadlock the dispatch while this run still holds the group.
 
@@ -102,7 +103,7 @@ jobs:
       - name: Install just
         run: bash openshell/scripts/install-just.sh
 
-      - name: Build every image (${{ matrix.arch }})
+      - name: Build and smoke-test every image (${{ matrix.arch }})
         run: just openshell::all
 
   publish:

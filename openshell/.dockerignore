@@ -3,3 +3,5 @@ scripts
 *.md
 justfile
 build.sh
+# Mounted by the Pi smoke test. It must not be copied into an image.
+pi/smoke
