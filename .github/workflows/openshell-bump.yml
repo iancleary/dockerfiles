@@ -103,6 +103,11 @@ jobs:
       - name: Install just
         run: bash openshell/scripts/install-just.sh
 
+      # just openshell::all builds harness images without OPENSHELL_BASE_IMAGE.
+      # This dry-run fails if that fallback cannot see the agent-cli recipe.
+      - name: Check recipes with no base image
+        run: bash openshell/scripts/just_recipes_test.sh
+
       - name: Build and smoke-test every image (${{ matrix.arch }})
         run: just openshell::all
 
@@ -130,6 +135,7 @@ jobs:
       - name: Commit and dispatch the release
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           git apply --check bump-out/bump.patch
@@ -139,9 +145,13 @@ jobs:
             echo "patch produced no staged changes" >&2
             exit 1
           }
-          git config user.name "github-actions[bot]"
+          # workflow_dispatch sets GITHUB_ACTOR to the person who started the
+          # run. The commit is still the Actions bot.
+          bot_id=41898282
+          bot_login="github-actions[bot]"
+          git config user.name "$bot_login"
           domain="users.noreply.github.com"
-          git config user.email "${GITHUB_ACTOR_ID}+${GITHUB_ACTOR}@${domain}"
+          git config user.email "${bot_id}+${bot_login}@${domain}"
           mapfile -t lines <bump-out/summary.txt
           if [[ ${#lines[@]} -eq 0 ]]; then
             echo "summary is empty" >&2
@@ -157,8 +167,10 @@ jobs:
             git commit -F "${RUNNER_TEMP}/commit-message.txt"
           fi
           git push origin HEAD:main
-          gh workflow run openshell-images.yml --ref main -f publish=release
+          gh workflow run openshell-images.yml --repo "$GH_REPO" --ref main -f publish=release
 
+  # No checkout. gh cannot discover the repo from git, so every call
+  # passes --repo. issues: write is the only permission this job needs.
   notify:
     needs: [bump, verify, publish]
     if: always() && (needs.bump.result == 'failure' || needs.verify.result == 'failure' || needs.publish.result == 'failure')
@@ -170,6 +182,7 @@ jobs:
       - name: Open or update the failure issue
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           title="OpenShell version bump failed"
@@ -178,10 +191,10 @@ jobs:
             "The OpenShell version bump workflow failed." \
             "Run: ${url}" \
             "A failed image build commits nothing. A failed publish may have pushed the version commit before the release dispatch; check main before re-running.")
-          number=$(gh issue list --state open --limit 50 --json number,title \
-            --jq '.[] | select(.title == "OpenShell version bump failed") | .number' | head -n 1)
+          number=$(gh issue list --repo "$GH_REPO" --state open --limit 50 --json number,title \
+            --jq '[.[] | select(.title == "OpenShell version bump failed") | .number][0] // empty')
           if [[ -n "$number" ]]; then
-            gh issue comment "$number" --body "$body"
+            gh issue comment "$number" --repo "$GH_REPO" --body "$body"
           else
-            gh issue create --title "$title" --body "$body"
+            gh issue create --repo "$GH_REPO" --title "$title" --body "$body"
           fi

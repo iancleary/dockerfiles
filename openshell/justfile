@@ -9,6 +9,9 @@ set shell := ["bash", "-euo", "pipefail", "-c"]
 
 images := source_directory()
 build_script := images / "scripts" / "docker-build.sh"
+# justfile() is the root file that imported this module. That file has no
+# image recipes. Child builds call agent-cli through this module file.
+module_just := images / "justfile"
 
 agent_cli_tag := env_var_or_default("OPENSHELL_AGENT_CLI_TAG", "openshell-agent-cli:phase1")
 python_tag := env_var_or_default("OPENSHELL_PYTHON_TAG", "openshell-python:phase1")
@@ -20,7 +23,7 @@ claude_tag := env_var_or_default("OPENSHELL_CLAUDE_TAG", "openshell-claude:phase
 
 # List image recipes without building.
 default:
-    @just --justfile {{ quote(justfile()) }} --list
+    @just --justfile {{ quote(module_just) }} --list
 
 # Build every default image.
 build: all
@@ -52,7 +55,7 @@ python: _require-docker
     #!/usr/bin/env bash
     set -euo pipefail
     if [[ -z "${OPENSHELL_BASE_IMAGE:-}" ]]; then
-      just --justfile {{ quote(justfile()) }} agent-cli
+      just --justfile {{ quote(module_just) }} agent-cli
     fi
     bash {{ quote(build_script) }} {{ quote(images / "python" / "Dockerfile") }} {{ quote(images) }} {{ quote(python_tag) }} UV_VERSION PYTHON_VERSION PRE_COMMIT_VERSION
 
@@ -61,7 +64,7 @@ rust: _require-docker
     #!/usr/bin/env bash
     set -euo pipefail
     if [[ -z "${OPENSHELL_BASE_IMAGE:-}" ]]; then
-      just --justfile {{ quote(justfile()) }} agent-cli
+      just --justfile {{ quote(module_just) }} agent-cli
     fi
     bash {{ quote(build_script) }} {{ quote(images / "rust" / "Dockerfile") }} {{ quote(images) }} {{ quote(rust_tag) }} RUST_VERSION
 
@@ -70,7 +73,7 @@ go: _require-docker
     #!/usr/bin/env bash
     set -euo pipefail
     if [[ -z "${OPENSHELL_BASE_IMAGE:-}" ]]; then
-      just --justfile {{ quote(justfile()) }} agent-cli
+      just --justfile {{ quote(module_just) }} agent-cli
     fi
     bash {{ quote(build_script) }} {{ quote(images / "go" / "Dockerfile") }} {{ quote(images) }} {{ quote(go_tag) }} GO_VERSION
 
@@ -79,7 +82,7 @@ pi: _require-docker
     #!/usr/bin/env bash
     set -euo pipefail
     if [[ -z "${OPENSHELL_BASE_IMAGE:-}" ]]; then
-      just --justfile {{ quote(justfile()) }} agent-cli
+      just --justfile {{ quote(module_just) }} agent-cli
     fi
     bash {{ quote(build_script) }} {{ quote(images / "pi" / "Dockerfile") }} {{ quote(images) }} {{ quote(pi_tag) }} PI_VERSION
 
@@ -88,7 +91,7 @@ codex: _require-docker
     #!/usr/bin/env bash
     set -euo pipefail
     if [[ -z "${OPENSHELL_BASE_IMAGE:-}" ]]; then
-      just --justfile {{ quote(justfile()) }} agent-cli
+      just --justfile {{ quote(module_just) }} agent-cli
     fi
     bash {{ quote(build_script) }} {{ quote(images / "codex" / "Dockerfile") }} {{ quote(images) }} {{ quote(codex_tag) }} CODEX_VERSION
 
@@ -97,7 +100,7 @@ claude: _require-docker
     #!/usr/bin/env bash
     set -euo pipefail
     if [[ -z "${OPENSHELL_BASE_IMAGE:-}" ]]; then
-      just --justfile {{ quote(justfile()) }} agent-cli
+      just --justfile {{ quote(module_just) }} agent-cli
     fi
     bash {{ quote(build_script) }} {{ quote(images / "claude" / "Dockerfile") }} {{ quote(images) }} {{ quote(claude_tag) }} CLAUDE_VERSION
 
