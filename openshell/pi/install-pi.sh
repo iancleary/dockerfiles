@@ -1,40 +1,31 @@
 #!/usr/bin/env bash
-# Node and the Pi release binary. fd, rg, and just come from the base image.
-# Pi is the linux archive from earendil-works/pi, not an npm install.
+# Pi release binary. fd, rg, and just come from the base image.
+# Pi is the linux archive from earendil-works/pi.
 # The tree is installed together so `pi --version` can see package.json.
 set -euo pipefail
 
 here=$(cd -- "$(dirname -- "$0")" && pwd)
 set -a
 # shellcheck disable=SC1091
-. "$here/node.env"
-# shellcheck disable=SC1091
 . "$here/pi.env"
 set +a
 
-: "${NODE_VERSION:?NODE_VERSION is required}"
-: "${NODE_SHA256_AMD64:?NODE_SHA256_AMD64 is required}"
-: "${NODE_SHA256_ARM64:?NODE_SHA256_ARM64 is required}"
 : "${PI_VERSION:?PI_VERSION is required}"
 : "${PI_SHA256_AMD64:?PI_SHA256_AMD64 is required}"
 : "${PI_SHA256_ARM64:?PI_SHA256_ARM64 is required}"
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y --no-install-recommends ca-certificates curl xz-utils
+apt-get install -y --no-install-recommends ca-certificates curl
 apt-mark manual ca-certificates
 
 arch=$(dpkg --print-architecture)
 case "$arch" in
   amd64)
-    node_arch=x64
-    node_sha=$NODE_SHA256_AMD64
     pi_asset=pi-linux-x64.tar.gz
     pi_sha=$PI_SHA256_AMD64
     ;;
   arm64)
-    node_arch=arm64
-    node_sha=$NODE_SHA256_ARM64
     pi_asset=pi-linux-arm64.tar.gz
     pi_sha=$PI_SHA256_ARM64
     ;;
@@ -46,17 +37,6 @@ esac
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
-
-archive=$tmp/node.tar.xz
-curl -fsSL -o "$archive" \
-  "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${node_arch}.tar.xz"
-echo "${node_sha}  ${archive}" | sha256sum -c -
-tar -xJf "$archive" -C /usr/local --strip-components=1
-node_got=$(/usr/local/bin/node --version)
-if [[ "$node_got" != "v${NODE_VERSION}" ]]; then
-  printf 'node --version printed %s, expected v%s\n' "$node_got" "$NODE_VERSION" >&2
-  exit 1
-fi
 
 pi_archive=$tmp/pi.tgz
 curl -fsSL -o "$pi_archive" \
@@ -80,6 +60,6 @@ fi
 mkdir -p /tmp/pi-agent
 chown 1000:1000 /tmp/pi-agent
 
-apt-get purge -y curl xz-utils
+apt-get purge -y curl
 apt-get autoremove -y
 rm -rf /var/lib/apt/lists/*

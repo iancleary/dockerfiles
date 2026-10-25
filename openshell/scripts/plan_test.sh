@@ -83,7 +83,6 @@ printf '%s\n' 'openshell/versions/base.env' >"$tmp/files-debian"
 printf '%s\n' 'openshell/versions/python.env' >"$tmp/files-pyver"
 printf '%s\n' 'openshell/versions/rust.env' >"$tmp/files-rustver"
 printf '%s\n' 'openshell/versions/go.env' >"$tmp/files-gover"
-printf '%s\n' 'openshell/versions/node.env' >"$tmp/files-node"
 printf '%s\n' 'openshell/versions/pi.env' >"$tmp/files-piver"
 printf '%s\n' 'openshell/versions/codex.env' >"$tmp/files-codexver"
 printf '%s\n' 'openshell/versions/claude.env' >"$tmp/files-claudever"
@@ -188,10 +187,6 @@ expect 'rust version file rebuilds rust only' \
 expect 'go version file rebuilds go only' \
   "$(record edge edge '' false "$(flags false false false true false false false)")" \
   --event push --sha "$sha" --files "$tmp/files-gover"
-
-expect 'node version file rebuilds pi only' \
-  "$(record edge edge '' false "$(flags false false false false true false false)")" \
-  --event push --sha "$sha" --files "$tmp/files-node"
 
 expect 'pi version file rebuilds pi only' \
   "$(record edge edge '' false "$(flags false false false false true false false)")" \

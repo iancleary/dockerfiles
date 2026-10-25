@@ -21,7 +21,7 @@ rules live in the [repository README](../README.md).
 | `ghcr.io/iancleary/openshell-python` | [`python/Dockerfile`](python/Dockerfile) | agent-cli | `uv`, CPython, `pre-commit` from [`versions/python.env`](versions/python.env) |
 | `ghcr.io/iancleary/openshell-rust` | [`rust/Dockerfile`](rust/Dockerfile) | agent-cli | rustc/cargo from [`versions/rust.env`](versions/rust.env), `gcc` |
 | `ghcr.io/iancleary/openshell-go` | [`go/Dockerfile`](go/Dockerfile) | agent-cli | Go from [`versions/go.env`](versions/go.env) |
-| `ghcr.io/iancleary/openshell-pi` | [`pi/Dockerfile`](pi/Dockerfile) | agent-cli, overridable | Node from [`versions/node.env`](versions/node.env), Pi from [`versions/pi.env`](versions/pi.env) |
+| `ghcr.io/iancleary/openshell-pi` | [`pi/Dockerfile`](pi/Dockerfile) | agent-cli, overridable | Pi from [`versions/pi.env`](versions/pi.env) |
 | `ghcr.io/iancleary/openshell-codex` | [`codex/Dockerfile`](codex/Dockerfile) | agent-cli, overridable | Codex CLI from [`versions/codex.env`](versions/codex.env) |
 | `ghcr.io/iancleary/openshell-claude` | [`claude/Dockerfile`](claude/Dockerfile) | agent-cli, overridable | Claude Code from [`versions/claude.env`](versions/claude.env) |
 
@@ -105,7 +105,6 @@ reads the same files and passes `DEBIAN_IMAGE` for the agent-cli base.
 | [`versions/python.env`](versions/python.env) | `uv` and sha256, CPython, `pre-commit` |
 | [`versions/rust.env`](versions/rust.env) | rustc/cargo/rust-std version and sha256 |
 | [`versions/go.env`](versions/go.env) | Go version and sha256 |
-| [`versions/node.env`](versions/node.env) | Node version and sha256 |
 | [`versions/pi.env`](versions/pi.env) | Pi version and sha256 |
 | [`versions/codex.env`](versions/codex.env) | Codex version and sha256 |
 | [`versions/claude.env`](versions/claude.env) | Claude Code version and sha256 |
@@ -115,8 +114,8 @@ dateless `static.rust-lang.org/dist/<component>-<version>-<triple>.tar.xz`
 files. The channel manifest still has a dist date; the install ignores it.
 Pi is the `pi-linux-*.tar.gz` tree from
 [earendil-works/pi](https://github.com/earendil-works/pi) releases, installed
-under `/usr/local/lib/pi` with `/usr/local/bin/pi` pointing at it. Node stays
-on `PATH`. CPython and `pre-commit` are installed by `uv`, which checks
+under `/usr/local/lib/pi` with `/usr/local/bin/pi` pointing at it. The image
+does not install Node. CPython and `pre-commit` are installed by `uv`, which checks
 those downloads, so only their versions are pinned.
 
 Refresh the pins from upstream with:
@@ -138,7 +137,6 @@ The release line is patch-only inside the pin that is already in the file:
 | Line | Tools | What moves |
 | --- | --- | --- |
 | minor | `fd`, `rg`, `just`, CPython, `pre-commit`, Rust, Go, Pi, Claude Code, and any other 1.x pin | Newest `major.minor.patch` on the pinned `major.minor` |
-| major | Node | Newest `24.x.y` while the file says 24. Node security releases move the minor |
 | zero | `uv`, Codex | Newest stable `0.x.y`. Routine releases move the middle number. Prereleases are skipped |
 
 A Rust train, a Go minor, or a Pi minor stays put until someone edits that
@@ -158,7 +156,7 @@ The bump job rewrites the pins. When files change, `just openshell::all`
 builds every image on `ubuntu-24.04` and `ubuntu-24.04-arm`. That build
 does not log in and does not push. When both builds pass, the workflow
 commits to `main` as `github-actions[bot]`. One bump uses that bump as the
-commit message (`bump node 24.22.1 -> 24.22.2`). Several bumps use the
+commit message (`bump claude 2.1.309 -> 2.1.310`). Several bumps use the
 subject `bump openshell versions` and list the rest in the body. A failed
 build commits nothing and opens or updates one issue titled
 `OpenShell version bump failed`.
@@ -200,11 +198,11 @@ Workflow permissions set to read and write, and a ruleset that lets
 
 | Image | Binary |
 | --- | --- |
-| pi | `/usr/local/bin/pi` (the Node tarball is on `PATH` too) |
+| pi | `/usr/local/bin/pi` |
 | codex | `/usr/local/bin/codex` |
 | claude | `/usr/local/bin/claude` |
 
-The Pi image install extracts the official Node distribution, so `node`, `npm`, and `npx` are on `PATH`. The install checks `node --version` and then stops using them. Pi itself is the GitHub release binary. Extensions run inside that binary, not under system Node. Codex and Claude are each a single release binary. Their Dockerfiles, install scripts, and entrypoints do not install Node and do not call `node`, `npm`, or `npx`. None of the three images bake an MCP server or an `npx` command. Node stays on the Pi image because that is the published contract. It is unused by the image's own entrypoint, so a later change could drop it from Pi without affecting Codex or Claude.
+Pi, Codex, and Claude are each the upstream release binary. The images do not install Node, npm, or npx, and they do not bake an MCP server. Pi packages and extensions that need npm dependencies are not supported until Node is added back. `pi install npm:` and `pi install git:` will not work. A local TypeScript file passed with `pi -e` still loads, because those modules are built into the Pi binary. The smoke test uses that path.
 
 ## Smoke tests
 
@@ -216,7 +214,7 @@ just openshell::smoke-codex
 just openshell::smoke-claude
 ```
 
-The Pi check mounts [`pi/smoke/extension.ts`](pi/smoke/extension.ts) into a throwaway container (`docker run --rm --network none`). That file is the only fixture. `pi/smoke` is in the build's dockerignore, and the Dockerfile does not copy it, so it is not in the published image. Pi 1.4.0 gives extensions `@earendil-works/pi-coding-agent` and `typebox` (see the upstream `docs/packages.md` shipped in that release). The fixture reads `VERSION` from `@earendil-works/pi-coding-agent` and builds a TypeBox object. A type-only import is not enough: Pi still exits 0 from `--help` when an import fails, and it omits the flag. The container runs:
+The Pi check mounts [`pi/smoke/extension.ts`](pi/smoke/extension.ts) into a throwaway container (`docker run --rm --network none`). That file is the only fixture. `pi/smoke` is in the build's dockerignore, and the Dockerfile does not copy it, so it is not in the published image. Pi 1.4.0 gives extensions `@earendil-works/pi-coding-agent` and `typebox` (see the upstream `docs/packages.md` shipped in that release). The fixture reads `VERSION` from `@earendil-works/pi-coding-agent` and builds a TypeBox object. Those modules are built into the Pi binary, so the fixture does not call Node, npm, or npx. A type-only import is not enough: Pi still exits 0 from `--help` when an import fails, and it omits the flag. The container runs:
 
 ```sh
 pi --offline --no-extensions -e /smoke/extension.ts --help

@@ -201,7 +201,7 @@ consider_file() {
     openshell/versions/go.env)
       go=true
       ;;
-    openshell/versions/node.env | openshell/versions/pi.env)
+    openshell/versions/pi.env)
       pi=true
       ;;
     openshell/versions/codex.env)

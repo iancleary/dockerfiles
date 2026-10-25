@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Official Codex musl binary from the rust-v<version> GitHub release.
-# No npm install and no API key.
+# No API key.
 set -euo pipefail
 
 here=$(cd -- "$(dirname -- "$0")" && pwd)

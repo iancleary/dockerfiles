@@ -93,9 +93,9 @@ version and both architectures' checksums, and checks the download. The
 Monday workflow runs that script, builds every image without pushing, and
 commits to `main` only when the builds pass. Details, the release lines,
 and the 60-day schedule caveat are in the
-[OpenShell README](openshell/README.md). Node stays on 24. CPython stays
-on 3.13. Rust, Go, and Pi stay on the pinned minor until that number is
-edited by hand.
+[OpenShell README](openshell/README.md). CPython stays on 3.13. Rust, Go,
+and Pi stay on the pinned minor until that number is edited by hand. The
+Pi image does not include Node.
 
 Workflow runs attest the arch images and the manifest list with
 `actions/attest-build-provenance` and sign them with keyless cosign

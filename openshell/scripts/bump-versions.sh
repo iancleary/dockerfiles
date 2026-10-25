@@ -2,7 +2,6 @@
 # Rewrite OpenShell version files to the newest allowed upstream release.
 #
 # Release lines (see openshell/README.md):
-#   major  Node stays on the pinned major (24.x.y).
 #   minor  Newest patch on the pinned major.minor. This is the default,
 #          including CPython 3.13.x, Go 1.27.x, and Rust 1.99.x.
 #   zero   uv and Codex track the newest stable 0.x.y. Their routine
@@ -57,10 +56,6 @@ line_prefix() {
   local mode=$1 version=$2 major minor
   IFS=. read -r major minor _ <<<"$version"
   case "$mode" in
-    major)
-      [[ -n "$major" ]] || return 1
-      printf '%s\n' "$major"
-      ;;
     minor)
       [[ -n "$minor" ]] || return 1
       printf '%s.%s\n' "$major" "$minor"
@@ -418,29 +413,6 @@ bump_github_archives() {
   record_version "$name" "$file" "$ver_key" "$current" "$chosen" "$3" "$amd_sha" "$4" "$arm_sha"
 }
 
-bump_node() {
-  local file=$work/versions/node.env current chosen json sums node_lines
-  local -a versions=()
-  current=$(kv "$file" NODE_VERSION)
-  json=$(curl_public "https://nodejs.org/dist/index.json") || die "node index failed"
-  node_lines=$(jq -r '.[].version' <<<"$json" | sed -n 's/^v\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)$/\1/p') \
-    || die "node index parse failed"
-  [[ -n "$node_lines" ]] || die "node index parse failed"
-  mapfile -t versions <<<"$node_lines"
-  chosen=$(choose_version node major "$current" "${versions[@]}")
-  printf 'resolve node %s\n' "$chosen" >&2
-  sums=$(download_to_cache "https://nodejs.org/dist/v${chosen}/SHASUMS256.txt" "node ${chosen} SHASUMS256.txt")
-  local amd_name="node-v${chosen}-linux-x64.tar.xz"
-  local arm_name="node-v${chosen}-linux-arm64.tar.xz"
-  local amd_sha arm_sha
-  amd_sha=$(checksum_for_name "$sums" "$amd_name") || die "node SHASUMS256.txt has no ${amd_name}"
-  arm_sha=$(checksum_for_name "$sums" "$arm_name") || die "node SHASUMS256.txt has no ${arm_name}"
-  download_verify "https://nodejs.org/dist/v${chosen}/${amd_name}" "$amd_sha" "node amd64"
-  download_verify "https://nodejs.org/dist/v${chosen}/${arm_name}" "$arm_sha" "node arm64"
-  record_version node "$file" NODE_VERSION "$current" "$chosen" \
-    NODE_SHA256_AMD64 "$amd_sha" NODE_SHA256_ARM64 "$arm_sha"
-}
-
 bump_go() {
   local file=$work/versions/go.env current chosen json go_lines
   local -a versions=()
@@ -748,7 +720,6 @@ main() {
   bump_pre_commit
   bump_rust
   bump_go
-  bump_node
   bump_github_archives pi minor "$work/versions/pi.env" PI_VERSION \
     earendil-works/pi v '^v([0-9]+\.[0-9]+\.[0-9]+)$' shared SHA256SUMS \
     "pi-linux-x64.tar.gz" \

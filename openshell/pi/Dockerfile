@@ -1,14 +1,14 @@
 # Pi on a shared OpenShell base. The default base is the agent-cli floor.
 # Pass BASE_IMAGE=openshell-rust:phase1 (or python, or go) to stack a toolchain,
 # and tag that build yourself. The build context is the openshell directory.
-# Node and the Pi release live in versions/node.env and versions/pi.env.
+# The Pi release lives in versions/pi.env.
 
 ARG BASE_IMAGE=openshell-agent-cli:phase1
 FROM ${BASE_IMAGE}
 
 # hadolint ignore=DL3066
 USER root
-COPY versions/node.env versions/pi.env pi/install-pi.sh /tmp/pi/
+COPY versions/pi.env pi/install-pi.sh /tmp/pi/
 RUN bash /tmp/pi/install-pi.sh && rm -rf /tmp/pi
 
 # hadolint ignore=DL3066

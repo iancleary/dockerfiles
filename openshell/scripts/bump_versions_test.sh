@@ -22,11 +22,6 @@ got=$(newest_matching minor 1.2.3 1.2.0 1.2.4 1.3.0 1.2.4-rc.1) || status=$?
 assert_eq "newest minor" "$got" "1.2.4"
 
 status=0
-got=$(newest_matching major 24.22.1 24.23.0 25.0.1 22.22.0) || status=$?
-[[ "$status" -eq 0 ]] || fail "newest major status ${status}"
-assert_eq "newest major" "$got" "24.23.0"
-
-status=0
 got=$(newest_matching zero 0.13.5 0.13.4 0.14.0 1.0.0) || status=$?
 [[ "$status" -eq 0 ]] || fail "newest zero status ${status}"
 assert_eq "newest zero" "$got" "0.14.0"
@@ -84,13 +79,21 @@ assert_eq "toml sha" \
 cd "$root"
 [[ ! -f renovate.json ]] || fail "renovate.json should be gone"
 [[ ! -f openshell/common/versions.env ]] || fail "common/versions.env should be gone"
+[[ ! -f openshell/versions/node.env ]] || fail "node.env should be gone"
 [[ -f .github/workflows/openshell-bump.yml ]] || fail "missing bump workflow"
 
-if grep -R -n -E 'RUST_DIST_DATE|ARG (PI|NODE|CODEX|CLAUDE)_VERSION=' \
+if grep -R -n -E 'RUST_DIST_DATE|ARG (PI|CODEX|CLAUDE)_VERSION=' \
   openshell .github/workflows \
   --include='Dockerfile' --include='*.sh' --include='*.yml' --include='*.env' \
   --exclude=bump_versions_test.sh; then
   fail "hard-coded version arg or rust dist date remains"
+fi
+
+if grep -R -n -E 'NODE_VERSION|nodejs\.org|versions/node\.env' \
+  openshell .github justfile \
+  --include='Dockerfile' --include='*.sh' --include='*.yml' --include='*.env' --include='justfile' \
+  --exclude=bump_versions_test.sh; then
+  fail "node install pin remains"
 fi
 
 if grep -R -n -E '[a-f0-9]{64}' openshell \

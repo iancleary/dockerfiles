@@ -81,7 +81,7 @@ pi: _require-docker
     if [[ -z "${OPENSHELL_BASE_IMAGE:-}" ]]; then
       just --justfile {{ quote(justfile()) }} agent-cli
     fi
-    bash {{ quote(build_script) }} {{ quote(images / "pi" / "Dockerfile") }} {{ quote(images) }} {{ quote(pi_tag) }} PI_VERSION NODE_VERSION
+    bash {{ quote(build_script) }} {{ quote(images / "pi" / "Dockerfile") }} {{ quote(images) }} {{ quote(pi_tag) }} PI_VERSION
 
 # Build openshell-codex:phase1 on agent-cli.
 codex: _require-docker
@@ -106,7 +106,7 @@ pi-rust: rust
     #!/usr/bin/env bash
     set -euo pipefail
     OPENSHELL_BASE_IMAGE=openshell-rust:phase1 \
-      bash {{ quote(build_script) }} {{ quote(images / "pi" / "Dockerfile") }} {{ quote(images) }} openshell-pi:rust PI_VERSION NODE_VERSION
+      bash {{ quote(build_script) }} {{ quote(images / "pi" / "Dockerfile") }} {{ quote(images) }} openshell-pi:rust PI_VERSION
 
 # Build the shared floor and the three default harness images, then smoke-test them.
 all: stacks pi codex claude smoke
