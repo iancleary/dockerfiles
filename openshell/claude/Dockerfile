@@ -1,14 +1,15 @@
 # Claude Code on a shared OpenShell base. The binary name is `claude`.
 # Default base is the agent-cli floor. No provider credentials.
+# The build context is the openshell directory.
+# The pin lives in versions/claude.env.
 
 ARG BASE_IMAGE=openshell-agent-cli:phase1
 FROM ${BASE_IMAGE}
 
 # hadolint ignore=DL3066
 USER root
-ARG CLAUDE_VERSION=2.1.309
-COPY install-claude.sh /tmp/install-claude.sh
-RUN CLAUDE_VERSION="$CLAUDE_VERSION" bash /tmp/install-claude.sh && rm -f /tmp/install-claude.sh
+COPY versions/claude.env claude/install-claude.sh /tmp/claude/
+RUN bash /tmp/claude/install-claude.sh && rm -rf /tmp/claude
 
 # hadolint ignore=DL3066
 USER agent

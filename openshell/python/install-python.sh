@@ -5,7 +5,7 @@ set -euo pipefail
 here=$(cd -- "$(dirname -- "$0")" && pwd)
 set -a
 # shellcheck disable=SC1091
-. "$here/versions.env"
+. "$here/python.env"
 set +a
 
 export DEBIAN_FRONTEND=noninteractive

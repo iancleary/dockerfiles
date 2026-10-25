@@ -1,12 +1,17 @@
 #!/usr/bin/env bash
-# Claude Code native archive from the v2.1.309 GitHub release.
-# Checksums match that release's SHASUMS256.txt. No install.sh and no API key.
+# Claude Code native archive from the GitHub release.
+# Checksums are the release SHASUMS256.txt lines. No install.sh and no API key.
 set -euo pipefail
 
-: "${CLAUDE_VERSION:?CLAUDE_VERSION is required}"
+here=$(cd -- "$(dirname -- "$0")" && pwd)
+set -a
+# shellcheck disable=SC1091
+. "$here/claude.env"
+set +a
 
-claude_amd64_sha=6259b381b9501b0b2b5d3ce4c068595bf32a59f1ca131ed69a1b1ae25b891cad
-claude_arm64_sha=8ecd1f2d06ccbd3f89c8886e840e42b57a19063f3de9cfe5f7d90fe875ba99ef
+: "${CLAUDE_VERSION:?CLAUDE_VERSION is required}"
+: "${CLAUDE_SHA256_AMD64:?CLAUDE_SHA256_AMD64 is required}"
+: "${CLAUDE_SHA256_ARM64:?CLAUDE_SHA256_ARM64 is required}"
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
@@ -17,11 +22,11 @@ arch=$(dpkg --print-architecture)
 case "$arch" in
   amd64)
     claude_arch=x64
-    claude_sha=$claude_amd64_sha
+    claude_sha=$CLAUDE_SHA256_AMD64
     ;;
   arm64)
     claude_arch=arm64
-    claude_sha=$claude_arm64_sha
+    claude_sha=$CLAUDE_SHA256_ARM64
     ;;
   *)
     printf 'unsupported architecture: %s\n' "$arch" >&2

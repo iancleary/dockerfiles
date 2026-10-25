@@ -1,7 +1,4 @@
-# Stack builds use this directory as the context. Harness builds use their own.
-pi
-codex
-claude
+# Every image build uses this directory as the context.
 scripts
 *.md
 justfile

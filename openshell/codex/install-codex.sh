@@ -1,12 +1,17 @@
 #!/usr/bin/env bash
-# Official Codex musl binary from the rust-v0.164.0 GitHub release.
+# Official Codex musl binary from the rust-v<version> GitHub release.
 # No npm install and no API key.
 set -euo pipefail
 
-: "${CODEX_VERSION:?CODEX_VERSION is required}"
+here=$(cd -- "$(dirname -- "$0")" && pwd)
+set -a
+# shellcheck disable=SC1091
+. "$here/codex.env"
+set +a
 
-codex_amd64_sha=90dd0b03b28afcb7fa733a4f73b413db2916a47347efd43fb669cc1c774ee8e4
-codex_arm64_sha=29a507a2a3fd8f6cd94b96b762d281d299d15d7902dee6132d314b78cf9108eb
+: "${CODEX_VERSION:?CODEX_VERSION is required}"
+: "${CODEX_SHA256_AMD64:?CODEX_SHA256_AMD64 is required}"
+: "${CODEX_SHA256_ARM64:?CODEX_SHA256_ARM64 is required}"
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
@@ -17,11 +22,11 @@ arch=$(dpkg --print-architecture)
 case "$arch" in
   amd64)
     triple=x86_64-unknown-linux-musl
-    codex_sha=$codex_amd64_sha
+    codex_sha=$CODEX_SHA256_AMD64
     ;;
   arm64)
     triple=aarch64-unknown-linux-musl
-    codex_sha=$codex_arm64_sha
+    codex_sha=$CODEX_SHA256_ARM64
     ;;
   *)
     printf 'unsupported architecture: %s\n' "$arch" >&2

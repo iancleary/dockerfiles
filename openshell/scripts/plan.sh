@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
 # Decide which OpenShell images to publish.
 #
-# GitHub cron cannot express "every 3 days". The schedule runs daily and this
-# script publishes a calver release only when the newest openshell-YYYY.MM.DD.NN
-# tag is at least 3 calendar days old, or when no such tag exists yet.
+# GitHub cron cannot express "every 3 days". The schedule runs daily. It
+# publishes a calver release when there is no openshell-YYYY.MM.DD.NN tag
+# yet, when the newest tag is at least OPENSHELL_FORCE_AGE_DAYS old (30),
+# or when that tag is at least OPENSHELL_MIN_AGE_DAYS old (3) and a release
+# input has changed since the tag. Release inputs are files under
+# openshell/, the root justfile, and the workflows that build the images.
+# workflow_dispatch release does not use those gates.
 #
 # stdout is key=value lines for $GITHUB_OUTPUT. Diagnostics go to stderr.
 set -euo pipefail
@@ -76,8 +80,58 @@ read_tags() {
   fi
 }
 
+# true when a scheduled release should notice this path.
+release_input() {
+  case "$1" in
+    openshell/* | .github/workflows/openshell-images.yml | .github/workflows/openshell-build-image.yml | justfile)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+# stdout is true or false. $1 is the latest calver tag, or empty.
+release_inputs_changed() {
+  local latest=$1 line source tmp="" result=false
+  if [[ -n "${OPENSHELL_CHANGES_FILE:-}" ]]; then
+    source=$OPENSHELL_CHANGES_FILE
+  elif [[ -n "${OPENSHELL_TAGS_FILE:-}" ]]; then
+    printf 'false\n'
+    return 0
+  elif [[ -z "$latest" ]]; then
+    printf 'true\n'
+    return 0
+  else
+    tmp=$(mktemp)
+    if ! git diff --name-only "${latest}^{}" HEAD >"$tmp"; then
+      rm -f "$tmp"
+      printf 'git diff against %s failed\n' "$latest" >&2
+      exit 1
+    fi
+    source=$tmp
+  fi
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line=${line%$'\r'}
+    if release_input "$line"; then
+      result=true
+      break
+    fi
+  done <"$source"
+  if [[ -n "$tmp" ]]; then
+    rm -f "$tmp"
+  fi
+  printf '%s\n' "$result"
+}
+
 next_release() {
   local tags latest datestr last_epoch now_epoch age_days today today_re count n nn
+  local min_age force_age changed
+  min_age=${OPENSHELL_MIN_AGE_DAYS:-3}
+  force_age=${OPENSHELL_FORCE_AGE_DAYS:-30}
+  if [[ ! "$min_age" =~ ^[0-9]+$ || ! "$force_age" =~ ^[0-9]+$ ]]; then
+    printf 'age gates must be non-negative integers\n' >&2
+    exit 2
+  fi
   tags=$(read_tags)
   latest=$(printf '%s\n' "$tags" | sed '/^$/d' | sort -V | tail -n 1)
   if [[ -z "$latest" ]]; then
@@ -89,8 +143,18 @@ next_release() {
     now_epoch=$(date -u -d "$now" +%s)
     age_days=$(((now_epoch - last_epoch) / 86400))
     printf 'latest calver %s is %s day(s) before %s\n' "$latest" "$age_days" "$now" >&2
-    if ((age_days >= 3)); then
+    if ((age_days >= force_age)); then
+      printf 'forced rebuild: age %s >= %s\n' "$age_days" "$force_age" >&2
       echo true
+    elif ((age_days >= min_age)); then
+      changed=$(release_inputs_changed "$latest")
+      if [[ "$changed" == true ]]; then
+        printf 'release inputs changed since %s\n' "$latest" >&2
+        echo true
+      else
+        printf 'no release inputs changed since %s\n' "$latest" >&2
+        echo false
+      fi
     else
       echo false
     fi
@@ -123,6 +187,30 @@ consider_file() {
       all=true
       ;;
     justfile | openshell/justfile | openshell/build.sh | openshell/scripts/docker-build.sh)
+      all=true
+      ;;
+    openshell/versions/base.env | openshell/versions/tools.env)
+      agent=true
+      ;;
+    openshell/versions/python.env)
+      python=true
+      ;;
+    openshell/versions/rust.env)
+      rust=true
+      ;;
+    openshell/versions/go.env)
+      go=true
+      ;;
+    openshell/versions/node.env | openshell/versions/pi.env)
+      pi=true
+      ;;
+    openshell/versions/codex.env)
+      codex=true
+      ;;
+    openshell/versions/claude.env)
+      claude=true
+      ;;
+    openshell/versions/*)
       all=true
       ;;
     openshell/common/* | openshell/agent-cli/*)

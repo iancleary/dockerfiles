@@ -1,11 +1,14 @@
 name: OpenShell images
 
 # Push to main publishes :edge and :sha-<short> for layers whose inputs changed.
+# A GITHUB_TOKEN push does not start this workflow. The version-bump workflow
+# dispatches it instead.
 # schedule runs daily because GitHub cron has no every-3-days interval. The
-# plan script rebuilds with --pull --no-cache only when the newest
-# openshell-YYYY.MM.DD.NN tag is at least 3 calendar days old (or missing).
-# That run publishes the calver and :latest, then creates the git tag.
-# workflow_dispatch can publish edge, or a release without waiting.
+# plan script publishes a calver when there is no openshell-YYYY.MM.DD.NN tag,
+# when the newest tag is at least 30 calendar days old, or when it is at least
+# 3 days old and a release input changed since that tag. Release inputs are
+# files under openshell/, the root justfile, and the image workflows.
+# workflow_dispatch release does not use those gates. edge republishes :edge.
 
 on:
   push:
@@ -65,6 +68,7 @@ jobs:
           bash openshell/scripts/plan_test.sh
           bash openshell/scripts/ci_merge_test.sh
           bash openshell/scripts/privacy-grep.sh
+          bash openshell/scripts/bump_versions_test.sh
 
       - name: Plan
         id: plan

@@ -4,7 +4,7 @@
 ARG BASE_IMAGE=openshell-agent-cli:phase1
 FROM ${BASE_IMAGE}
 
-COPY common/versions.env python/install-python.sh /tmp/stack/
+COPY versions/python.env python/install-python.sh /tmp/stack/
 RUN bash /tmp/stack/install-python.sh && rm -rf /tmp/stack
 
 ENV UV_PYTHON_INSTALL_DIR=/usr/local/share/uv/python

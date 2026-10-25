@@ -18,9 +18,10 @@ A language-stack base uses `BASE_IMAGE`:
 
 ```sh
 docker build \
+  -f openshell/codex/Dockerfile \
   --build-arg BASE_IMAGE=openshell-rust:phase1 \
   -t openshell-codex:rust \
-  openshell/codex
+  openshell
 ```
 
 `BASE_IMAGE` can be a published digest, for example

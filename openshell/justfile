@@ -79,7 +79,7 @@ pi: _require-docker
     if [[ -z "${OPENSHELL_BASE_IMAGE:-}" ]]; then
       just --justfile {{ quote(justfile()) }} agent-cli
     fi
-    bash {{ quote(build_script) }} {{ quote(images / "pi" / "Dockerfile") }} {{ quote(images / "pi") }} {{ quote(pi_tag) }} PI_VERSION NODE_VERSION
+    bash {{ quote(build_script) }} {{ quote(images / "pi" / "Dockerfile") }} {{ quote(images) }} {{ quote(pi_tag) }} PI_VERSION NODE_VERSION
 
 # Build openshell-codex:phase1 on agent-cli.
 codex: _require-docker
@@ -88,7 +88,7 @@ codex: _require-docker
     if [[ -z "${OPENSHELL_BASE_IMAGE:-}" ]]; then
       just --justfile {{ quote(justfile()) }} agent-cli
     fi
-    bash {{ quote(build_script) }} {{ quote(images / "codex" / "Dockerfile") }} {{ quote(images / "codex") }} {{ quote(codex_tag) }} CODEX_VERSION
+    bash {{ quote(build_script) }} {{ quote(images / "codex" / "Dockerfile") }} {{ quote(images) }} {{ quote(codex_tag) }} CODEX_VERSION
 
 # Build openshell-claude:phase1 on agent-cli.
 claude: _require-docker
@@ -97,14 +97,14 @@ claude: _require-docker
     if [[ -z "${OPENSHELL_BASE_IMAGE:-}" ]]; then
       just --justfile {{ quote(justfile()) }} agent-cli
     fi
-    bash {{ quote(build_script) }} {{ quote(images / "claude" / "Dockerfile") }} {{ quote(images / "claude") }} {{ quote(claude_tag) }} CLAUDE_VERSION
+    bash {{ quote(build_script) }} {{ quote(images / "claude" / "Dockerfile") }} {{ quote(images) }} {{ quote(claude_tag) }} CLAUDE_VERSION
 
 # Build local-only openshell-pi:rust on the rust stack. Not a published package.
 pi-rust: rust
     #!/usr/bin/env bash
     set -euo pipefail
     OPENSHELL_BASE_IMAGE=openshell-rust:phase1 \
-      bash {{ quote(build_script) }} {{ quote(images / "pi" / "Dockerfile") }} {{ quote(images / "pi") }} openshell-pi:rust PI_VERSION NODE_VERSION
+      bash {{ quote(build_script) }} {{ quote(images / "pi" / "Dockerfile") }} {{ quote(images) }} openshell-pi:rust PI_VERSION NODE_VERSION
 
 # Build the shared floor and the three default harness images.
 all: stacks pi codex claude
