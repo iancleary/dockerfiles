@@ -40,12 +40,13 @@ build_rust=$3
 build_go=$4
 build_pi=$5
 build_codex=$6
-build_claude=$7
+build_codex_pi=$7
+build_claude=$8
 EOF
 }
 
-all_true=$(flags true true true true true true true)
-all_false=$(flags false false false false false false false)
+all_true=$(flags true true true true true true true true)
+all_false=$(flags false false false false false false false false)
 
 record() {
   local publish=$1 version=$2 git_tag=$3 no_cache=$4 layers=$5
@@ -72,6 +73,10 @@ printf '%s\n' 'openshell/python/Dockerfile' 'openshell/README.md' >"$tmp/files-p
 printf '%s\n' 'openshell/versions/tools.env' >"$tmp/files-common"
 printf '%s\n' 'openshell/agent-cli/Dockerfile' >"$tmp/files-base"
 printf '%s\n' 'openshell/pi/Dockerfile' 'openshell/codex/install-codex.sh' >"$tmp/files-harness"
+printf '%s\n' 'openshell/pi/Dockerfile' >"$tmp/files-pi-dockerfile"
+printf '%s\n' 'openshell/pi/install-pi.sh' >"$tmp/files-pi-install"
+printf '%s\n' 'openshell/codex/README.md' >"$tmp/files-codex-readme"
+printf '%s\n' 'openshell/codex-pi/Dockerfile' >"$tmp/files-codex-pi"
 printf '%s\n' 'openshell/README.md' 'README.md' 'openshell/scripts/plan.sh' >"$tmp/files-docs"
 printf '%s\n' 'openshell/versions/claude.env' >"$tmp/changes-claude"
 : >"$tmp/changes-empty"
@@ -161,7 +166,7 @@ OPENSHELL_NOW=2026-10-24 OPENSHELL_TAGS_FILE="$tmp/sameday" \
 
 OPENSHELL_NOW=2026-10-24 OPENSHELL_TAGS_FILE="$tmp/empty-tags" \
   expect 'python-only push' \
-  "$(record edge edge '' false "$(flags false true false false false false false)")" \
+  "$(record edge edge '' false "$(flags false true false false false false false false)")" \
   --event push --sha "$sha" --files "$tmp/files-python"
 
 expect 'tool version file rebuilds every layer' \
@@ -177,28 +182,44 @@ expect 'install script rebuilds every layer' \
   --event push --sha "$sha" --files "$tmp/files-install"
 
 expect 'python version file rebuilds python only' \
-  "$(record edge edge '' false "$(flags false true false false false false false)")" \
+  "$(record edge edge '' false "$(flags false true false false false false false false)")" \
   --event push --sha "$sha" --files "$tmp/files-pyver"
 
 expect 'rust version file rebuilds rust only' \
-  "$(record edge edge '' false "$(flags false false true false false false false)")" \
+  "$(record edge edge '' false "$(flags false false true false false false false false)")" \
   --event push --sha "$sha" --files "$tmp/files-rustver"
 
 expect 'go version file rebuilds go only' \
-  "$(record edge edge '' false "$(flags false false false true false false false)")" \
+  "$(record edge edge '' false "$(flags false false false true false false false false)")" \
   --event push --sha "$sha" --files "$tmp/files-gover"
 
-expect 'pi version file rebuilds pi only' \
-  "$(record edge edge '' false "$(flags false false false false true false false)")" \
+expect 'pi version file rebuilds pi and codex-pi' \
+  "$(record edge edge '' false "$(flags false false false false true false true false)")" \
   --event push --sha "$sha" --files "$tmp/files-piver"
 
-expect 'codex version file rebuilds codex only' \
-  "$(record edge edge '' false "$(flags false false false false false true false)")" \
+expect 'codex version file rebuilds codex and codex-pi' \
+  "$(record edge edge '' false "$(flags false false false false false true true false)")" \
   --event push --sha "$sha" --files "$tmp/files-codexver"
 
 expect 'claude version file rebuilds claude only' \
-  "$(record edge edge '' false "$(flags false false false false false false true)")" \
+  "$(record edge edge '' false "$(flags false false false false false false false true)")" \
   --event push --sha "$sha" --files "$tmp/files-claudever"
+
+expect 'pi dockerfile does not rebuild codex-pi' \
+  "$(record edge edge '' false "$(flags false false false false true false false false)")" \
+  --event push --sha "$sha" --files "$tmp/files-pi-dockerfile"
+
+expect 'pi install script rebuilds pi and codex-pi' \
+  "$(record edge edge '' false "$(flags false false false false true false true false)")" \
+  --event push --sha "$sha" --files "$tmp/files-pi-install"
+
+expect 'codex readme does not rebuild codex-pi' \
+  "$(record edge edge '' false "$(flags false false false false false true false false)")" \
+  --event push --sha "$sha" --files "$tmp/files-codex-readme"
+
+expect 'codex-pi dockerfile rebuilds codex-pi only' \
+  "$(record edge edge '' false "$(flags false false false false false false true false)")" \
+  --event push --sha "$sha" --files "$tmp/files-codex-pi"
 
 expect 'unknown version file rebuilds every layer' \
   "$(record edge edge '' false "$all_true")" \
@@ -209,7 +230,7 @@ expect 'agent-cli change rebuilds descendants' \
   --event push --sha "$sha" --files "$tmp/files-base"
 
 expect 'harness paths do not rebuild unrelated layers' \
-  "$(record edge edge '' false "$(flags false false false false true true false)")" \
+  "$(record edge edge '' false "$(flags false false false false true true true false)")" \
   --event push --sha "$sha" --files "$tmp/files-harness"
 
 expect 'docs and plan script do not rebuild images' \

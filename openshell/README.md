@@ -23,14 +23,17 @@ rules live in the [repository README](../README.md).
 | `ghcr.io/iancleary/openshell-go` | [`go/Dockerfile`](go/Dockerfile) | agent-cli | Go from [`versions/go.env`](versions/go.env) |
 | `ghcr.io/iancleary/openshell-pi` | [`pi/Dockerfile`](pi/Dockerfile) | agent-cli, overridable | Pi from [`versions/pi.env`](versions/pi.env) |
 | `ghcr.io/iancleary/openshell-codex` | [`codex/Dockerfile`](codex/Dockerfile) | agent-cli, overridable | Codex CLI from [`versions/codex.env`](versions/codex.env) |
+| `ghcr.io/iancleary/openshell-codex-pi` | [`codex-pi/Dockerfile`](codex-pi/Dockerfile) | agent-cli, overridable | Codex CLI and Pi, using the Codex and Pi install scripts and pins |
 | `ghcr.io/iancleary/openshell-claude` | [`claude/Dockerfile`](claude/Dockerfile) | agent-cli, overridable | Claude Code from [`versions/claude.env`](versions/claude.env) |
 
 Harness Dockerfiles take `ARG BASE_IMAGE`. The default,
 `openshell-agent-cli:phase1`, is the local tag so `just openshell::build`
 works without GHCR. CI passes the published parent digest instead.
-Published harness images use the agent-cli base. They replace the old local
-tags `openshell-pi:phase1`, `openshell-codex:phase1`, and
-`openshell-claude:phase1`.
+Published harness images use the agent-cli base. `openshell-pi`,
+`openshell-codex`, and `openshell-claude` replace the old local tags
+`openshell-pi:phase1`, `openshell-codex:phase1`, and
+`openshell-claude:phase1`. `openshell-codex-pi` is the same base with both
+the Codex CLI and Pi installed. Its local tag is `openshell-codex-pi:phase1`.
 
 Every tool version, checksum, and the Debian base digest lives in
 [`versions/`](versions/). The weekly bump edits those files and the pinned
@@ -53,7 +56,7 @@ just openshell::build
 
 `just openshell` lists the recipes. `just --list` shows this module, and
 `just --list --list-submodules` shows the recipes from the root. `build` is
-`all`: the shared floor and the three default harness tags. Images stay on
+`all`: the shared floor and the default harness tags. Images stay on
 this machine, tagged `openshell-<layer>:phase1`.
 
 | Recipe | What it builds |
@@ -65,9 +68,10 @@ this machine, tagged `openshell-<layer>:phase1`.
 | `openshell::go` | `openshell-go:phase1` after agent-cli |
 | `openshell::pi` | `openshell-pi:phase1` after agent-cli |
 | `openshell::codex` | `openshell-codex:phase1` after agent-cli |
+| `openshell::codex-pi` | `openshell-codex-pi:phase1` after agent-cli |
 | `openshell::claude` | `openshell-claude:phase1` after agent-cli |
 | `openshell::pi-rust` | local-only `openshell-pi:rust` on `openshell-rust:phase1` |
-| `openshell::build` | `stacks`, then pi, codex, claude, then smoke every image |
+| `openshell::build` | `stacks`, then pi, codex, codex-pi, claude, then smoke every image |
 | `openshell::all` | same as `build` |
 
 `bash openshell/build.sh` builds only the shared floor. `build.sh` and these
@@ -83,8 +87,9 @@ docker build \
   openshell
 ```
 
-The same `--build-arg` works for the Codex and Claude Dockerfiles. Example
-local tags: `openshell-codex:python`, `openshell-claude:go`. `BASE_IMAGE`
+The same `--build-arg` works for the Codex, Codex-Pi, and Claude Dockerfiles.
+Example local tags: `openshell-codex:python`, `openshell-codex-pi:rust`,
+`openshell-claude:go`. `BASE_IMAGE`
 can also be a published digest, for example
 `ghcr.io/iancleary/openshell-rust@sha256:…`.
 
@@ -93,7 +98,7 @@ CI calls the same recipes (`just openshell::agent-cli`, and so on). It sets
 rebuild its parent, and `OPENSHELL_BUILD_FLAGS` for the native-arch
 digest push. The weekly bump's verify job does not set
 `OPENSHELL_BASE_IMAGE`. `just openshell::all` builds the floor with
-`build.sh`, then Pi, Codex, and Claude. Those recipes, and `python`,
+`build.sh`, then Pi, Codex, Codex-Pi, and Claude. Those recipes, and `python`,
 `rust`, and `go` when run on their own, build agent-cli from this
 module's justfile. `justfile()` would point at the root justfile, which
 has no `agent-cli` recipe.
@@ -114,6 +119,14 @@ reads the same files and passes `DEBIAN_IMAGE` for the agent-cli base.
 | [`versions/pi.env`](versions/pi.env) | Pi version and sha256 |
 | [`versions/codex.env`](versions/codex.env) | Codex version and sha256 |
 | [`versions/claude.env`](versions/claude.env) | Claude Code version and sha256 |
+
+`openshell-codex-pi` has no version file of its own. Its Dockerfile copies
+`common/harden-runtime.sh`, `codex/install-codex.sh`, `pi/install-pi.sh`, and
+the two env files those scripts source. The weekly bump already rewrites those pins. There is no
+Renovate config in this repo. `plan.sh` rebuilds `openshell-codex-pi` when
+either pin changes, when either install script changes, and when a file
+under `codex-pi/` changes. A Pi or Codex Dockerfile change that leaves the
+install script alone does not rebuild the combined image.
 
 Install scripts source the file copied next to them. Rust archives are the
 dateless `static.rust-lang.org/dist/<component>-<version>-<triple>.tar.xz`
@@ -247,19 +260,20 @@ are removed before the final `USER`.
 | --- | --- |
 | pi | `/usr/local/bin/pi` |
 | codex | `/usr/local/bin/codex` |
+| codex-pi | `/usr/local/bin/codex` and `/usr/local/bin/pi` |
 | claude | `/usr/local/bin/claude` |
 
-Pi, Codex, and Claude are each the upstream release binary. The images do not install Node, npm, or npx, and they do not bake an MCP server. Pi packages and extensions that need npm dependencies are not supported until Node is added back. `pi install npm:` and `pi install git:` will not work. A local TypeScript file passed with `pi -e` still loads, because those modules are built into the Pi binary. The smoke test uses that path.
+Pi, Codex, and Claude are each the upstream release binary. The codex-pi image installs both with those same scripts. `fd` and `rg` are the agent-cli copies. The images do not install Node, npm, or npx, and they do not bake an MCP server. Codex is the musl binary and does not need Node. Pi packages and extensions that need npm dependencies are not supported until Node is added back. `pi install npm:` and `pi install git:` will not work. A local TypeScript file passed with `pi -e` still loads, because those modules are built into the Pi binary. The smoke test uses that path.
 
 ## Smoke tests
 
 `just openshell::all` builds the images and then runs these, including the
-toolchain images. Each one can also be run on its own. They use the local
-tag from the build (`openshell-pi:phase1`, and the same pattern for the
-other images). CI loads every image, runs this same script, and only then
-pushes that image by digest. The push replays the build from the builder
-cache and refuses to continue unless the pushed config digest is the image
-that was smoked. A failed smoke test pushes nothing.
+toolchain images and the combined Codex and Pi image. Each one can also be
+run on its own. They use the local tag from the build (`openshell-pi:phase1`,
+and the same pattern for the other images). CI loads every image, runs this
+same script, and only then pushes that image by digest. The push replays the
+build from the builder cache and refuses to continue unless the pushed config
+digest is the image that was smoked. A failed smoke test pushes nothing.
 
 ```sh
 just openshell::smoke-agent-cli
@@ -268,6 +282,7 @@ just openshell::smoke-rust
 just openshell::smoke-go
 just openshell::smoke-pi
 just openshell::smoke-codex
+just openshell::smoke-codex-pi
 just openshell::smoke-claude
 ```
 
@@ -280,6 +295,8 @@ pi --offline --no-extensions -e /smoke/extension.ts --help
 `--help` exits without a model call. A loaded extension prints its flag there. The test fails unless the output contains `--openshell-smoke` and `OPENSHELL_PI_EXTENSION_OK`. No API key is passed in.
 
 Codex and Claude have no check of that kind that stays offline and credential-free. Their smoke test is `--version`. The first version token on the first line has to equal the pin in `versions/codex.env` or `versions/claude.env`. A pin of `2.1.31` does not match output that says `2.1.310`. Pi uses the same rule. The container has `--network none` for every smoke test, and the command does not pass `--user`.
+
+The codex-pi check runs `pi --offline --version`, `codex --version`, `pi --offline --list-models`, `fd --version`, and `rg --version`. Those versions have to equal the pins in `versions/pi.env` and `versions/codex.env`. It uses the same unprivileged checks as the other images and loads the same Pi extension fixture.
 
 OpenShell drops image `ENV` on `sandbox exec`. Pass `PI_CODING_AGENT_DIR`
 again on exec. The image default is `/tmp/pi-agent`. Callers may pass a

@@ -177,6 +177,7 @@ rust=false
 go=false
 pi=false
 codex=false
+codex_pi=false
 claude=false
 all=false
 
@@ -203,9 +204,11 @@ consider_file() {
       ;;
     openshell/versions/pi.env)
       pi=true
+      codex_pi=true
       ;;
     openshell/versions/codex.env)
       codex=true
+      codex_pi=true
       ;;
     openshell/versions/claude.env)
       claude=true
@@ -225,11 +228,22 @@ consider_file() {
     openshell/go/*)
       go=true
       ;;
+    openshell/pi/install-pi.sh)
+      pi=true
+      codex_pi=true
+      ;;
     openshell/pi/*)
       pi=true
       ;;
+    openshell/codex/install-codex.sh)
+      codex=true
+      codex_pi=true
+      ;;
     openshell/codex/*)
       codex=true
+      ;;
+    openshell/codex-pi/*)
+      codex_pi=true
       ;;
     openshell/claude/*)
       claude=true
@@ -304,11 +318,12 @@ if [[ "$agent" == true ]]; then
   go=true
   pi=true
   codex=true
+  codex_pi=true
   claude=true
 fi
 
 if [[ -z "$publish" ]]; then
-  if [[ "$agent" == true || "$python" == true || "$rust" == true || "$go" == true || "$pi" == true || "$codex" == true || "$claude" == true ]]; then
+  if [[ "$agent" == true || "$python" == true || "$rust" == true || "$go" == true || "$pi" == true || "$codex" == true || "$codex_pi" == true || "$claude" == true ]]; then
     publish=edge
     image_version=edge
   else
@@ -334,4 +349,5 @@ emit build_rust "$rust"
 emit build_go "$go"
 emit build_pi "$pi"
 emit build_codex "$codex"
+emit build_codex_pi "$codex_pi"
 emit build_claude "$claude"

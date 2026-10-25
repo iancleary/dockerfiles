@@ -68,7 +68,17 @@ parse=$(bash openshell/scripts/smoke-image.sh --parse-version '2.1.31')
 parse=$(bash openshell/scripts/smoke-image.sh --parse-version '2.1.310')
 [[ "$parse" != "2.1.31" ]] || fail "short version matched a longer release"
 grep -F -q 'just openshell::smoke-pi' openshell/README.md || fail "docs"
+grep -F -q 'just openshell::smoke-codex-pi' openshell/README.md || fail "codex-pi docs"
 grep -F -q 'smoke-pi:' openshell/justfile || fail "smoke-pi recipe"
-grep -F -q 'all: stacks pi codex claude smoke' openshell/justfile || fail "all runs smoke"
+grep -F -q 'smoke-codex-pi:' openshell/justfile || fail "smoke-codex-pi recipe"
+grep -F -q 'all: stacks pi codex codex-pi claude smoke' openshell/justfile || fail "all runs smoke"
+grep -F -q 'pi/install-pi.sh' openshell/codex-pi/Dockerfile || fail "codex-pi should reuse install-pi.sh"
+grep -F -q 'codex/install-codex.sh' openshell/codex-pi/Dockerfile || fail "codex-pi should reuse install-codex.sh"
+if grep -R -n 'github.com/earendil-works/pi' openshell/codex-pi; then
+  fail "pi download URL duplicated"
+fi
+if grep -R -n 'github.com/openai/codex' openshell/codex-pi; then
+  fail "codex download URL duplicated"
+fi
 
 printf 'smoke tests passed\n'

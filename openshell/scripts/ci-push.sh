@@ -11,7 +11,7 @@ set -euo pipefail
 : "${GITHUB_OUTPUT:?GITHUB_OUTPUT is required}"
 
 case "$RECIPE" in
-  agent-cli | python | rust | go | pi | codex | claude) ;;
+  agent-cli | python | rust | go | pi | codex | codex-pi | claude) ;;
   *)
     printf 'unknown recipe %s\n' "$RECIPE" >&2
     exit 1

@@ -176,6 +176,7 @@ expect_jobs .github/workflows/openshell-images.yml \
   "$(build_lines go)" \
   "$(build_lines pi)" \
   "$(build_lines codex)" \
+  "$(build_lines codex-pi)" \
   "$(build_lines claude)" \
   "$(job_lines release "contents write")"
 expect_jobs .github/workflows/openshell-bump.yml \
