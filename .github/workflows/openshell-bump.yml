@@ -1,8 +1,8 @@
 name: OpenShell version bump
 
-# Monday 16:00 UTC is 09:00 America/Phoenix (UTC-7, no daylight saving).
-# That is after the 15:15 UTC image cron, so the daily plan finishes before
-# this run commits. A GITHUB_TOKEN push does not start other workflows;
+# Monday 13:00 UTC is 06:00 America/Phoenix (UTC-7, no daylight saving).
+# That is before the 15:15 UTC image cron, so the two schedules do not
+# choose a calver at the same moment. A GITHUB_TOKEN push does not start other workflows;
 # the publish job dispatches OpenShell images with publish=release, which
 # skips the age and change gates.
 #
@@ -13,7 +13,7 @@ name: OpenShell version bump
 
 on:
   schedule:
-    - cron: "0 16 * * 1"
+    - cron: "0 13 * * 1"
   workflow_dispatch:
 
 permissions:
