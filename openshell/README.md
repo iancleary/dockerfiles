@@ -90,7 +90,12 @@ can also be a published digest, for example
 CI calls the same recipes (`just openshell::agent-cli`, and so on). It sets
 `OPENSHELL_BASE_IMAGE` and `OPENSHELL_BASE_DIGEST` so a child does not
 rebuild its parent, and `OPENSHELL_BUILD_FLAGS` for the native-arch
-digest push.
+digest push. The weekly bump's verify job does not set
+`OPENSHELL_BASE_IMAGE`. `just openshell::all` builds the floor with
+`build.sh`, then Pi, Codex, and Claude. Those recipes, and `python`,
+`rust`, and `go` when run on their own, build agent-cli from this
+module's justfile. `justfile()` would point at the root justfile, which
+has no `agent-cli` recipe.
 
 The build context for every OpenShell Dockerfile is the `openshell/`
 directory. `versions/*.env` has to be in that context. `docker-build.sh`

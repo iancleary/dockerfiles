@@ -110,7 +110,19 @@ debian=$(grep -E '^DEBIAN_IMAGE=' openshell/versions/base.env | cut -d= -f2-)
 grep -q 'cron: "0 16 \* \* 1"' .github/workflows/openshell-bump.yml || fail "bump cron"
 grep -q 'contents: write' .github/workflows/openshell-bump.yml || fail "contents write"
 grep -q 'actions: write' .github/workflows/openshell-bump.yml || fail "actions write"
+grep -q 'issues: write' .github/workflows/openshell-bump.yml || fail "issues write"
 grep -q 'group: openshell-version-bump' .github/workflows/openshell-bump.yml || fail "concurrency group"
 grep -q 'publish=release' .github/workflows/openshell-bump.yml || fail "release dispatch"
+grep -q 'GH_REPO: ${{ github.repository }}' .github/workflows/openshell-bump.yml || fail "GH_REPO"
+grep -F -q 'gh issue list --repo' .github/workflows/openshell-bump.yml || fail "issue list repo"
+grep -F -q 'gh issue comment "$number" --repo' .github/workflows/openshell-bump.yml || fail "issue comment repo"
+grep -F -q 'gh issue create --repo' .github/workflows/openshell-bump.yml || fail "issue create repo"
+grep -F -q 'gh workflow run openshell-images.yml --repo' .github/workflows/openshell-bump.yml || fail "dispatch repo"
+grep -F -q 'bot_id=41898282' .github/workflows/openshell-bump.yml || fail "actions bot id"
+grep -F -q 'just_recipes_test.sh' .github/workflows/openshell-bump.yml || fail "verify recipe check"
+grep -F -q 'just_recipes_test.sh' .github/workflows/openshell-images.yml || fail "image workflow recipe check"
+if grep -n 'quote(justfile())' openshell/justfile; then
+  fail "module recipes must not call justfile()"
+fi
 
 printf 'bump version tests passed\n'
