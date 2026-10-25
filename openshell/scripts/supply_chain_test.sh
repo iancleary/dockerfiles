@@ -100,16 +100,6 @@ for installer in openshell/common/install-agent-cli.sh openshell/python/install-
 done
 
 grep -q '%2B' openshell/python/install-python.sh || fail "CPython URL must encode the plus in the asset name"
-grep -q -- '--require-hashes' openshell/python/install-python.sh || fail "pre-commit install dropped --require-hashes"
-pre_ver=$(grep -E '^PRE_COMMIT_VERSION=' openshell/versions/python.env | cut -d= -f2-)
-grep -q "^pre-commit==${pre_ver} " openshell/versions/pre-commit-requirements.txt \
-  || fail "pre-commit requirements do not pin ${pre_ver}"
-grep -q -- '--hash=sha256:' openshell/versions/pre-commit-requirements.txt \
-  || fail "pre-commit requirements have no hashes"
-# shellcheck disable=SC1091
-. openshell/scripts/bump-versions.sh
-requirements_lines_ok openshell/versions/pre-commit-requirements.txt \
-  || fail "pre-commit requirements have an unexpected line"
 
 assert_top_permissions() {
   local file=$1 count next

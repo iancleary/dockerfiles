@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# uv, one pinned CPython, and pre-commit. No agent CLI.
+# uv and one pinned CPython. No agent CLI. pre-commit is not included.
 # CPython is the python-build-standalone archive, not `uv python install`.
-# pre-commit is installed from a hashed requirements file.
 set -euo pipefail
 
 here=$(cd -- "$(dirname -- "$0")" && pwd)
@@ -15,7 +14,6 @@ set +a
 : "${UV_VERSION:?UV_VERSION is required}"
 : "${PYTHON_VERSION:?PYTHON_VERSION is required}"
 : "${PYTHON_STANDALONE_TAG:?PYTHON_STANDALONE_TAG is required}"
-: "${PRE_COMMIT_VERSION:?PRE_COMMIT_VERSION is required}"
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
@@ -81,17 +79,6 @@ if [[ "$py_out" != "Python ${PYTHON_VERSION}" ]]; then
   exit 1
 fi
 
-tool=/usr/local/share/uv/tools/pre-commit
-mkdir -p /usr/local/share/uv/tools
-UV_CACHE_DIR=$tmp/cache uv venv "$tool" --python /usr/local/bin/python3
-UV_CACHE_DIR=$tmp/cache uv pip install \
-  --python "$tool/bin/python" \
-  --require-hashes \
-  --only-binary :all: \
-  --no-cache \
-  -r "$here/pre-commit-requirements.txt"
-ln -sfn "$tool/bin/pre-commit" /usr/local/bin/pre-commit
-
 uv_out=$(uv --version)
 uv_line=${uv_out%%$'\n'*}
 case "$uv_line" in
@@ -101,18 +88,8 @@ case "$uv_line" in
     exit 1
     ;;
 esac
-pc_out=$(pre-commit --version)
-pc_line=${pc_out%%$'\n'*}
-case "$pc_line" in
-  "pre-commit ${PRE_COMMIT_VERSION}" | "pre-commit ${PRE_COMMIT_VERSION} "*) ;;
-  *)
-    printf 'pre-commit --version printed [%s], want pre-commit %s\n' "$pc_out" "$PRE_COMMIT_VERSION" >&2
-    exit 1
-    ;;
-esac
 
 install -d -m 0755 -o 1000 -g 1000 /tmp/uv-cache
-install -d -m 0755 -o 1000 -g 1000 /tmp/pre-commit
 
 apt-get purge -y curl
 apt-get autoremove -y

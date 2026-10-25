@@ -103,7 +103,6 @@ case "$recipe" in
     assert_unprivileged
     expect_version PYTHON_VERSION "$root/openshell/versions/python.env" "$(run_cli python3 --version)"
     expect_version UV_VERSION "$root/openshell/versions/python.env" "$(run_cli uv --version)"
-    expect_version PRE_COMMIT_VERSION "$root/openshell/versions/python.env" "$(run_cli pre-commit --version)"
     ;;
   rust)
     assert_unprivileged

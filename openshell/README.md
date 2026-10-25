@@ -18,7 +18,7 @@ rules live in the [repository README](../README.md).
 | Image | Dockerfile | Base | What it adds |
 | --- | --- | --- | --- |
 | `ghcr.io/iancleary/openshell-agent-cli` | [`agent-cli/Dockerfile`](agent-cli/Dockerfile) | `debian:bookworm-slim` from [`versions/base.env`](versions/base.env) | `fd`, `rg`, `just` from [`versions/tools.env`](versions/tools.env), user `agent` uid 1000 |
-| `ghcr.io/iancleary/openshell-python` | [`python/Dockerfile`](python/Dockerfile) | agent-cli | `uv`, CPython, `pre-commit` from [`versions/python.env`](versions/python.env) |
+| `ghcr.io/iancleary/openshell-python` | [`python/Dockerfile`](python/Dockerfile) | agent-cli | `uv` and CPython from [`versions/python.env`](versions/python.env) |
 | `ghcr.io/iancleary/openshell-rust` | [`rust/Dockerfile`](rust/Dockerfile) | agent-cli | rustc/cargo from [`versions/rust.env`](versions/rust.env), `gcc` |
 | `ghcr.io/iancleary/openshell-go` | [`go/Dockerfile`](go/Dockerfile) | agent-cli | Go from [`versions/go.env`](versions/go.env) |
 | `ghcr.io/iancleary/openshell-pi` | [`pi/Dockerfile`](pi/Dockerfile) | agent-cli, overridable | Pi from [`versions/pi.env`](versions/pi.env) |
@@ -39,8 +39,9 @@ that holds each pin. Bookworm's `fd-find` package is 8.6.0, the binary is
 `fdfind`, and it has no `--no-require-git`, so the image installs the
 upstream `fd` release instead.
 
-`pre-commit` is only on the Python image. It runs hooks with CPython. The
-Rust and Go images stay free of that interpreter.
+`pre-commit` is not included. It can be added later. Hooks that need
+`nodeenv` or Node are out of scope. The Rust and Go images do not include
+CPython.
 
 ## Local build
 
@@ -107,7 +108,7 @@ reads the same files and passes `DEBIAN_IMAGE` for the agent-cli base.
 | --- | --- |
 | [`versions/base.env`](versions/base.env) | `DEBIAN_IMAGE` (`debian:bookworm-slim` by digest) |
 | [`versions/tools.env`](versions/tools.env) | `fd`, `rg`, `just` and both architectures' sha256 |
-| [`versions/python.env`](versions/python.env) | `uv` and sha256, CPython archive and sha256, `pre-commit` |
+| [`versions/python.env`](versions/python.env) | `uv` and sha256, CPython archive and sha256 |
 | [`versions/rust.env`](versions/rust.env) | rustc/cargo/rust-std version and sha256 |
 | [`versions/go.env`](versions/go.env) | Go version and sha256 |
 | [`versions/pi.env`](versions/pi.env) | Pi version and sha256 |
@@ -122,8 +123,8 @@ Pi is the `pi-linux-*.tar.gz` tree from
 under `/usr/local/lib/pi` with `/usr/local/bin/pi` pointing at it. The image
 does not install Node. CPython is the pinned
 [python-build-standalone](https://github.com/astral-sh/python-build-standalone)
-`install_only_stripped` archive. `pre-commit` and its dependencies are the
-hashed list in [`versions/pre-commit-requirements.txt`](versions/pre-commit-requirements.txt).
+`install_only_stripped` archive. `pre-commit` is not included. Hooks that
+need `nodeenv` or Node are out of scope.
 
 Refresh the pins from upstream with:
 
@@ -143,7 +144,7 @@ The release line is patch-only inside the pin that is already in the file:
 
 | Line | Tools | What moves |
 | --- | --- | --- |
-| minor | `fd`, `rg`, `just`, CPython, `pre-commit`, Rust, Go, Pi, Claude Code, and any other 1.x pin | Newest `major.minor.patch` on the pinned `major.minor` |
+| minor | `fd`, `rg`, `just`, CPython, Rust, Go, Pi, Claude Code, and any other 1.x pin | Newest `major.minor.patch` on the pinned `major.minor` |
 | zero | `uv`, Codex | Newest stable `0.x.y`. Routine releases move the middle number. Prereleases are skipped |
 
 A Rust train, a Go minor, or a Pi minor stays put until someone edits that
@@ -219,9 +220,8 @@ network, still matches these images. OpenShell drops image `ENV` on
 smoke test runs `docker run` without `--user`, so a root default fails it.
 
 The CPython tree includes `pip`. It is not linked onto `PATH`, and `agent`
-cannot write the prefix. `pre-commit` can still ask `nodeenv` to download
-Node when a hook needs it. That download is not pinned. A sandbox with no
-network fails it closed.
+cannot write the prefix. `pre-commit` is not included. Hooks that need
+`nodeenv` or Node are out of scope.
 
 ## How downloads are checked
 
@@ -290,7 +290,7 @@ policy often allows writes under `/tmp` only:
 
 | Stack | Pass on exec |
 | --- | --- |
-| python | `UV_PYTHON_INSTALL_DIR=/usr/local/share/uv/python`, `UV_TOOL_DIR=/usr/local/share/uv/tools`, `UV_CACHE_DIR=/tmp/uv-cache`, `PRE_COMMIT_HOME=/tmp/pre-commit` |
+| python | `UV_PYTHON_INSTALL_DIR=/usr/local/share/uv/python`, `UV_CACHE_DIR=/tmp/uv-cache` |
 | rust | `CARGO_HOME=/tmp/cargo` |
 | go | `GOPATH=/tmp/go`, `GOCACHE=/tmp/gocache`, `GOMODCACHE=/tmp/go/pkg/mod`, `CGO_ENABLED=0` |
 

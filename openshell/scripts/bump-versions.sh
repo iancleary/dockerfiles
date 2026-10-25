@@ -15,8 +15,7 @@
 # GitHub artifact attestations are verified when the release has one.
 # A failed attestation refuses the pin. Rust's channel manifest signature
 # is checked before its xz_hash values are recorded.
-# CPython is the python-build-standalone archive. pre-commit is a hashed
-# requirements file produced by the pinned uv.
+# CPython is the python-build-standalone archive. pre-commit is not included.
 #
 # Rust archives use the dateless static.rust-lang.org paths. The channel
 # manifest still records a dist date; the images do not.
@@ -628,97 +627,6 @@ bump_python_versions() {
     PYTHON_SHA256_ARM64 "$arm_sha"
 }
 
-requirements_lines_ok() {
-  local file=$1 line
-  while IFS= read -r line || [[ -n "$line" ]]; do
-    [[ -z "$line" ]] && continue
-    [[ "$line" =~ ^[[:alnum:]._-]+==[^[:space:]]+\ \\$ ]] && continue
-    [[ "$line" =~ ^[[:space:]]+--hash=sha256:[a-f0-9]{64}(\ \\)?$ ]] && continue
-    printf 'unexpected requirements line: %s\n' "$line" >&2
-    return 1
-  done <"$file"
-}
-
-compile_pre_commit_requirements() {
-  local version=$1 dest=$2
-  local uv_ver triple sha url archive dir bin req_in
-  uv_ver=$(kv "$work/versions/python.env" UV_VERSION)
-  case "$(uname -m)" in
-    x86_64 | amd64)
-      triple=x86_64-unknown-linux-musl
-      sha=$(kv "$work/versions/python.env" UV_SHA256_AMD64)
-      ;;
-    aarch64 | arm64)
-      triple=aarch64-unknown-linux-musl
-      sha=$(kv "$work/versions/python.env" UV_SHA256_ARM64)
-      ;;
-    *)
-      die "unsupported host architecture for uv"
-      ;;
-  esac
-  url="https://github.com/astral-sh/uv/releases/download/${uv_ver}/uv-${triple}.tar.gz"
-  download_verify "$url" "$sha" "uv for pre-commit lock"
-  archive=$(download_to_cache "$url" "uv for pre-commit lock")
-  dir=$work/uv-extract
-  rm -rf "$dir"
-  mkdir -p "$dir"
-  tar -xzf "$archive" -C "$dir"
-  bin=$(find "$dir" -type f -name uv -print -quit)
-  [[ -n "$bin" && -x "$bin" ]] || die "uv binary missing from archive"
-  req_in=$work/pre-commit.in
-  printf 'pre-commit==%s\n' "$version" >"$req_in"
-  "$bin" pip compile "$req_in" \
-    --python-version 3.13 \
-    --universal \
-    --generate-hashes \
-    --only-binary :all: \
-    --no-header \
-    --no-annotate \
-    -o "$dest" \
-    || die "could not resolve pre-commit ${version} with hashes"
-  requirements_lines_ok "$dest" || die "pre-commit requirements file is not only pinned hashes"
-  if ! grep -q -- "--hash=sha256:" "$dest"; then
-    die "pre-commit requirements file has no hashes"
-  fi
-  if ! grep -q "^pre-commit==${version} " "$dest" && ! grep -q "^pre-commit==${version}\\\\" "$dest"; then
-    die "pre-commit lock does not pin ${version}"
-  fi
-}
-
-bump_pre_commit() {
-  local file=$work/versions/python.env current chosen json pre_lines req old_req
-  local -a versions=()
-  current=$(kv "$file" PRE_COMMIT_VERSION)
-  json=$(curl_public "https://pypi.org/pypi/pre-commit/json") || die "pre-commit index failed"
-  pre_lines=$(
-    jq -r '
-      .releases
-      | to_entries[]
-      | select(any(.value[]; (.yanked // false) | not))
-      | .key
-    ' <<<"$json"
-  ) || die "pre-commit index parse failed"
-  [[ -n "$pre_lines" ]] || die "pre-commit index parse failed"
-  mapfile -t versions <<<"$pre_lines"
-  chosen=$(choose_version pre-commit minor "$current" "${versions[@]}")
-  printf 'resolve pre-commit %s\n' "$chosen" >&2
-  req=$work/versions/pre-commit-requirements.txt
-  old_req=$(mktemp)
-  if [[ -f "$req" ]]; then
-    cp "$req" "$old_req"
-  else
-    : >"$old_req"
-  fi
-  compile_pre_commit_requirements "$chosen" "$req"
-  record_version pre-commit "$file" PRE_COMMIT_VERSION "$current" "$chosen"
-  if ! cmp -s "$old_req" "$req"; then
-    if [[ "$current" == "$chosen" ]]; then
-      note "bump pre-commit ${current} checksums"
-    fi
-  fi
-  rm -f "$old_req"
-}
-
 bump_debian() {
   local file=$work/versions/base.env token headers digest manifest old new arch
   token=$(curl_public "https://auth.docker.io/token?service=registry.docker.io&scope=repository:library/debian:pull" | jq -r '.token // empty') \
@@ -910,7 +818,6 @@ main() {
     "uv-aarch64-unknown-linux-musl.tar.gz" \
     UV_SHA256_AMD64 UV_SHA256_ARM64
   bump_python_versions
-  bump_pre_commit
   bump_rust
   bump_go
   bump_github_archives pi minor "$work/versions/pi.env" PI_VERSION \

@@ -57,7 +57,7 @@ python: _require-docker
     if [[ -z "${OPENSHELL_BASE_IMAGE:-}" ]]; then
       just --justfile {{ quote(module_just) }} agent-cli
     fi
-    bash {{ quote(build_script) }} {{ quote(images / "python" / "Dockerfile") }} {{ quote(images) }} {{ quote(python_tag) }} UV_VERSION PYTHON_VERSION PYTHON_STANDALONE_TAG PRE_COMMIT_VERSION
+    bash {{ quote(build_script) }} {{ quote(images / "python" / "Dockerfile") }} {{ quote(images) }} {{ quote(python_tag) }} UV_VERSION PYTHON_VERSION PYTHON_STANDALONE_TAG
 
 # Build openshell-rust:phase1 on agent-cli.
 rust: _require-docker
@@ -120,7 +120,7 @@ smoke-agent-cli: agent-cli
     set -euo pipefail
     bash {{ quote(images / "scripts" / "smoke-image.sh") }} agent-cli {{ quote(agent_cli_tag) }}
 
-# Confirm uv, CPython, and pre-commit run as uid 1000.
+# Confirm uv and CPython run as uid 1000.
 smoke-python: python
     #!/usr/bin/env bash
     set -euo pipefail
