@@ -8,8 +8,12 @@ ARG DEBIAN_IMAGE
 # hadolint ignore=DL3006
 FROM ${DEBIAN_IMAGE}
 
-COPY common/install-agent-cli.sh versions/tools.env /tmp/agent-cli/
+COPY common/harden-runtime.sh common/install-agent-cli.sh versions/tools.env /tmp/agent-cli/
 RUN bash /tmp/agent-cli/install-agent-cli.sh && rm -rf /tmp/agent-cli
+
+# hadolint ignore=DL3066
+USER agent
+WORKDIR /tmp
 
 ARG IMAGE_TITLE=openshell-agent-cli
 ARG GIT_SHA=unknown

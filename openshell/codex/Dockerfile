@@ -8,7 +8,7 @@ FROM ${BASE_IMAGE}
 
 # hadolint ignore=DL3066
 USER root
-COPY versions/codex.env codex/install-codex.sh /tmp/codex/
+COPY common/harden-runtime.sh versions/codex.env codex/install-codex.sh /tmp/codex/
 RUN bash /tmp/codex/install-codex.sh && rm -rf /tmp/codex
 
 # hadolint ignore=DL3066

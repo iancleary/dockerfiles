@@ -41,6 +41,8 @@ concurrency:
 jobs:
   plan:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     timeout-minutes: 10
     outputs:
       publish: ${{ steps.plan.outputs.publish }}
@@ -72,6 +74,7 @@ jobs:
           bash openshell/scripts/smoke_test.sh
           bash openshell/scripts/install-just.sh
           bash openshell/scripts/just_recipes_test.sh
+          bash openshell/scripts/supply_chain_test.sh
 
       - name: Plan
         id: plan
@@ -335,6 +338,8 @@ jobs:
       (needs.plan.outputs.build_claude != 'true' || needs.claude.result == 'success')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    # contents: write creates the calver tag and GitHub Release.
+    # Dispatching other workflows is left to the bump publish job.
     permissions:
       contents: write
     steps:

@@ -8,9 +8,15 @@
 #          releases move the minor component. Prereleases are skipped.
 #
 # Checksums are taken from the upstream checksum file or the GitHub asset
-# digest, then checked by downloading the artifact. A mismatch or a missing
-# asset fails the run. CPython and pre-commit are installed by uv, which
-# verifies those downloads, so only their versions are pinned.
+# digest, then checked by downloading the artifact. Two published checksums
+# that disagree fail the run. A missing asset or an unreadable checksum
+# fails the run. When a vendor publishes no checksum, the downloaded bytes
+# are hashed and that trust-on-first-use pin is what the image build checks.
+# GitHub artifact attestations are verified when the release has one.
+# A failed attestation refuses the pin. Rust's channel manifest signature
+# is checked before its xz_hash values are recorded.
+# CPython is the python-build-standalone archive. pre-commit is a hashed
+# requirements file produced by the pinned uv.
 #
 # Rust archives use the dateless static.rust-lang.org paths. The channel
 # manifest still records a dist date; the images do not.
@@ -22,8 +28,8 @@
 # are any. It does not modify the repository. A clean tree exits 0.
 # Other failures exit 2.
 #
-# Requires bash, curl, jq, and GNU sha256sum. Set GITHUB_TOKEN or use
-# `gh auth token` so the GitHub API rate limit is not the anonymous cap.
+# Requires bash, curl, jq, gpg, gh, and GNU sha256sum. Set GITHUB_TOKEN
+# or use `gh auth token` so the GitHub API rate limit is not the anonymous cap.
 # OPENSHELL_BUMP_CACHE, when set, stores downloads. Cached files are
 # hashed again and replaced when they do not match.
 set -euo pipefail
@@ -156,6 +162,8 @@ set_kv() {
 github_curl() {
   local url=$1 attempt=1 body
   local -a args=(
+    --proto '=https'
+    --tlsv1.2
     --http1.1
     -fsSL
     --retry 3
@@ -183,7 +191,7 @@ github_curl() {
 }
 
 curl_public() {
-  curl --http1.1 -fsSL --retry 5 --retry-all-errors --retry-delay 2 --connect-timeout 20 --max-time 600 "$@"
+  curl --proto '=https' --tlsv1.2 --http1.1 -fsSL --retry 5 --retry-all-errors --retry-delay 2 --connect-timeout 20 --max-time 600 "$@"
 }
 
 # Run a command in this shell and read its stdout into the named array.
@@ -221,22 +229,80 @@ download_to_cache() {
   printf '%s\n' "$dest"
 }
 
+sha256_matches() {
+  local dest=$1 expected=$2
+  [[ "$expected" =~ ^[a-f0-9]{64}$ ]] || return 2
+  echo "${expected}  ${dest}" | sha256sum -c --status
+}
+
+verify_sha256_file() {
+  local dest=$1 expected=$2 label=$3 got
+  if sha256_matches "$dest" "$expected"; then
+    return 0
+  fi
+  got=$(sha256sum "$dest" | awk '{print $1}')
+  die "checksum mismatch for ${label}: expected ${expected} got ${got}"
+}
+
+# Both values set and different: refuse. One empty value is not a disagreement.
+assert_same_checksum() {
+  local left=$1 right=$2 label=$3
+  if [[ -n "$left" && -n "$right" && "$left" != "$right" ]]; then
+    die "checksum sources disagree for ${label}"
+  fi
+}
+
 download_verify() {
-  local url=$1 expected=$2 label=$3 dest got
+  local url=$1 expected=$2 label=$3 dest
   [[ "$expected" =~ ^[a-f0-9]{64}$ ]] || die "bad sha256 for ${label}"
   dest=$(download_to_cache "$url" "$label")
-  if echo "${expected}  ${dest}" | sha256sum -c --status; then
+  if sha256_matches "$dest" "$expected"; then
     return 0
   fi
   if [[ -n "${OPENSHELL_BUMP_CACHE:-}" ]]; then
     rm -f "$dest"
     dest=$(download_to_cache "$url" "$label")
-    if echo "${expected}  ${dest}" | sha256sum -c --status; then
+    if sha256_matches "$dest" "$expected"; then
       return 0
     fi
   fi
-  got=$(sha256sum "$dest" | awk '{print $1}')
-  die "checksum mismatch for ${label}: expected ${expected} got ${got}"
+  verify_sha256_file "$dest" "$expected" "$label"
+}
+
+# stdout is verified or absent. A bad attestation returns non-zero.
+classify_attestation_output() {
+  local status=$1 text=$2
+  if [[ "$status" -eq 0 ]]; then
+    printf 'verified\n'
+    return 0
+  fi
+  if grep -Eqi 'HTTP 404|No attestations found|no attestation' <<<"$text"; then
+    printf 'absent\n'
+    return 0
+  fi
+  printf 'failed\n'
+  return 1
+}
+
+verify_github_attestation() {
+  local dest=$1 repo=$2 label=$3 err status=0 kind
+  command -v gh >/dev/null 2>&1 || die "gh is required to check GitHub artifact attestations"
+  err=$(gh attestation verify "$dest" --repo "$repo" 2>&1) || status=$?
+  if ! kind=$(classify_attestation_output "$status" "$err"); then
+    printf '%s\n' "$err" | sed -E 's#https://[^[:space:]]+#<url>#g' >&2
+    die "artifact attestation failed for ${label}"
+  fi
+  case "$kind" in
+    verified)
+      printf 'attestation verified %s\n' "$label" >&2
+      ;;
+    absent)
+      printf 'no GitHub artifact attestation for %s; the sha256 pin is not signed by sigstore\n' "$label" >&2
+      ;;
+    *)
+      die "unexpected attestation result for ${label}"
+      ;;
+  esac
 }
 
 require_array() {
@@ -352,14 +418,13 @@ resolve_archive_sha() {
       published=$(checksum_for_name "$sums_file" "$asset") \
         || die "checksum file ${sums_asset} has no line for ${asset}"
     fi
-    if [[ -n "$digest" && "$digest" != "$published" ]]; then
-      die "asset digest and checksum file disagree for ${asset}"
-    fi
+    assert_same_checksum "$digest" "$published" "$asset"
   elif [[ -n "$digest" ]]; then
     published=$digest
   fi
   if [[ -n "$published" ]]; then
     download_verify "$url" "$published" "$label"
+    verify_github_attestation "$(download_to_cache "$url" "$label")" "$repo" "$label"
     printf '%s\n' "$published"
     return 0
   fi
@@ -368,6 +433,7 @@ resolve_archive_sha() {
   dest=$(download_to_cache "$url" "$label")
   got=$(sha256sum "$dest" | awk '{print $1}')
   [[ "$got" =~ ^[a-f0-9]{64}$ ]] || die "could not hash ${label}"
+  verify_github_attestation "$dest" "$repo" "$label"
   printf '%s\n' "$got"
 }
 
@@ -483,6 +549,7 @@ bump_rust() {
   chosen=$(choose_version rust minor "$current" "${versions[@]}")
   printf 'resolve rust %s\n' "$chosen" >&2
   toml=$(download_to_cache "https://static.rust-lang.org/dist/channel-rust-${chosen}.toml" "channel-rust-${chosen}.toml")
+  verify_rust_channel "$chosen" "$toml"
   rust_ver=$(toml_value "$toml" "pkg.rustc" version semver)
   [[ "$rust_ver" == "$chosen" ]] || die "channel-rust-${chosen}.toml is rustc ${rust_ver:-missing}"
   rustc_amd=$(rust_component_sha rustc x86_64-unknown-linux-gnu "rustc amd64" "$toml" "$chosen")
@@ -497,19 +564,129 @@ bump_rust() {
     RUST_STD_SHA256_AMD64 "$std_amd" RUST_STD_SHA256_ARM64 "$std_arm"
 }
 
+# Rust signs channel-rust-<version>.toml. The component xz_hash values
+# inside that file are trusted only after this signature matches the pinned key.
+RUST_RELEASE_FINGERPRINT=108F66205EAEB0AAA8DD5E1C85AB96E6FA1BE5FE
+
+verify_rust_channel() {
+  local version=$1 toml=$2 asc key dir status_out
+  command -v gpg >/dev/null 2>&1 || die "gpg is required to verify the Rust channel signature"
+  asc=$(download_to_cache "https://static.rust-lang.org/dist/channel-rust-${version}.toml.asc" "channel-rust-${version}.toml.asc")
+  key=$(download_to_cache "https://static.rust-lang.org/rust-key.gpg.ascii" "rust release key")
+  dir=$work/gnupg
+  rm -rf "$dir"
+  mkdir -p "$dir"
+  chmod 700 "$dir"
+  gpg --homedir "$dir" --batch --import "$key" >/dev/null 2>&1
+  status_out=$(gpg --homedir "$dir" --batch --status-fd 1 --verify "$asc" "$toml" 2>/dev/null) \
+    || die "Rust channel signature failed for ${version}"
+  if ! grep -q "VALIDSIG ${RUST_RELEASE_FINGERPRINT} " <<<"$status_out"; then
+    die "Rust channel signature is not from the pinned release key"
+  fi
+}
+
+python_standalone_tag() {
+  local pyver=$1 page=1 json tag
+  while ((page <= 4)); do
+    json=$(github_curl "https://api.github.com/repos/astral-sh/python-build-standalone/releases?per_page=5&page=${page}") \
+      || die "python-build-standalone release list failed"
+    require_array "$json" "python-build-standalone"
+    tag=$(jq -r --arg ver "$pyver" '
+      [ .[] | .tag_name as $t
+        | select(any(.assets[]; .name == ("cpython-" + $ver + "+" + $t + "-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz")))
+        | select(any(.assets[]; .name == ("cpython-" + $ver + "+" + $t + "-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz")))
+        | $t
+      ] | first // empty
+    ' <<<"$json")
+    if [[ -n "$tag" ]]; then
+      printf '%s\n' "$tag"
+      return 0
+    fi
+    page=$((page + 1))
+  done
+  die "no python-build-standalone install_only_stripped build for ${pyver}"
+}
+
 bump_python_versions() {
-  local file=$work/versions/python.env current chosen prefix
+  local file=$work/versions/python.env current chosen prefix tag
+  local amd_asset arm_asset amd_sha arm_sha
   local -a versions=()
   current=$(kv "$file" PYTHON_VERSION)
   prefix=$(line_prefix minor "$current") || die "bad python version ${current}"
   capture_lines versions list_tag_versions python/cpython "tags/v${prefix}."
   chosen=$(choose_version python minor "$current" "${versions[@]}")
   printf 'resolve python %s\n' "$chosen" >&2
-  record_version python "$file" PYTHON_VERSION "$current" "$chosen"
+  tag=$(python_standalone_tag "$chosen")
+  [[ "$tag" =~ ^[0-9]{8}$ ]] || die "bad python-build-standalone tag ${tag}"
+  amd_asset="cpython-${chosen}+${tag}-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz"
+  arm_asset="cpython-${chosen}+${tag}-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz"
+  amd_sha=$(resolve_archive_sha astral-sh/python-build-standalone "$tag" "$amd_asset" shared SHA256SUMS "cpython amd64")
+  arm_sha=$(resolve_archive_sha astral-sh/python-build-standalone "$tag" "$arm_asset" shared SHA256SUMS "cpython arm64")
+  record_version python "$file" PYTHON_VERSION "$current" "$chosen" \
+    PYTHON_STANDALONE_TAG "$tag" \
+    PYTHON_SHA256_AMD64 "$amd_sha" \
+    PYTHON_SHA256_ARM64 "$arm_sha"
+}
+
+requirements_lines_ok() {
+  local file=$1 line
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -z "$line" ]] && continue
+    [[ "$line" =~ ^[[:alnum:]._-]+==[^[:space:]]+\ \\$ ]] && continue
+    [[ "$line" =~ ^[[:space:]]+--hash=sha256:[a-f0-9]{64}(\ \\)?$ ]] && continue
+    printf 'unexpected requirements line: %s\n' "$line" >&2
+    return 1
+  done <"$file"
+}
+
+compile_pre_commit_requirements() {
+  local version=$1 dest=$2
+  local uv_ver triple sha url archive dir bin req_in
+  uv_ver=$(kv "$work/versions/python.env" UV_VERSION)
+  case "$(uname -m)" in
+    x86_64 | amd64)
+      triple=x86_64-unknown-linux-musl
+      sha=$(kv "$work/versions/python.env" UV_SHA256_AMD64)
+      ;;
+    aarch64 | arm64)
+      triple=aarch64-unknown-linux-musl
+      sha=$(kv "$work/versions/python.env" UV_SHA256_ARM64)
+      ;;
+    *)
+      die "unsupported host architecture for uv"
+      ;;
+  esac
+  url="https://github.com/astral-sh/uv/releases/download/${uv_ver}/uv-${triple}.tar.gz"
+  download_verify "$url" "$sha" "uv for pre-commit lock"
+  archive=$(download_to_cache "$url" "uv for pre-commit lock")
+  dir=$work/uv-extract
+  rm -rf "$dir"
+  mkdir -p "$dir"
+  tar -xzf "$archive" -C "$dir"
+  bin=$(find "$dir" -type f -name uv -print -quit)
+  [[ -n "$bin" && -x "$bin" ]] || die "uv binary missing from archive"
+  req_in=$work/pre-commit.in
+  printf 'pre-commit==%s\n' "$version" >"$req_in"
+  "$bin" pip compile "$req_in" \
+    --python-version 3.13 \
+    --universal \
+    --generate-hashes \
+    --only-binary :all: \
+    --no-header \
+    --no-annotate \
+    -o "$dest" \
+    || die "could not resolve pre-commit ${version} with hashes"
+  requirements_lines_ok "$dest" || die "pre-commit requirements file is not only pinned hashes"
+  if ! grep -q -- "--hash=sha256:" "$dest"; then
+    die "pre-commit requirements file has no hashes"
+  fi
+  if ! grep -q "^pre-commit==${version} " "$dest" && ! grep -q "^pre-commit==${version}\\\\" "$dest"; then
+    die "pre-commit lock does not pin ${version}"
+  fi
 }
 
 bump_pre_commit() {
-  local file=$work/versions/python.env current chosen json pre_lines
+  local file=$work/versions/python.env current chosen json pre_lines req old_req
   local -a versions=()
   current=$(kv "$file" PRE_COMMIT_VERSION)
   json=$(curl_public "https://pypi.org/pypi/pre-commit/json") || die "pre-commit index failed"
@@ -525,7 +702,21 @@ bump_pre_commit() {
   mapfile -t versions <<<"$pre_lines"
   chosen=$(choose_version pre-commit minor "$current" "${versions[@]}")
   printf 'resolve pre-commit %s\n' "$chosen" >&2
+  req=$work/versions/pre-commit-requirements.txt
+  old_req=$(mktemp)
+  if [[ -f "$req" ]]; then
+    cp "$req" "$old_req"
+  else
+    : >"$old_req"
+  fi
+  compile_pre_commit_requirements "$chosen" "$req"
   record_version pre-commit "$file" PRE_COMMIT_VERSION "$current" "$chosen"
+  if ! cmp -s "$old_req" "$req"; then
+    if [[ "$current" == "$chosen" ]]; then
+      note "bump pre-commit ${current} checksums"
+    fi
+  fi
+  rm -f "$old_req"
 }
 
 bump_debian() {
@@ -682,6 +873,8 @@ main() {
   command -v jq >/dev/null 2>&1 || die "jq is required"
   command -v curl >/dev/null 2>&1 || die "curl is required"
   command -v sha256sum >/dev/null 2>&1 || die "sha256sum is required"
+  command -v gpg >/dev/null 2>&1 || die "gpg is required"
+  command -v gh >/dev/null 2>&1 || die "gh is required"
   if [[ -z "${GITHUB_TOKEN:-}" && -n "${GH_TOKEN:-}" ]]; then
     GITHUB_TOKEN=$GH_TOKEN
   fi

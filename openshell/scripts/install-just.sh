@@ -26,7 +26,8 @@ esac
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 archive=$tmp/just.tgz
-curl -fsSL -o "$archive" \
+curl -fsSL --proto '=https' --tlsv1.2 --retry 5 --retry-all-errors --retry-delay 2 \
+  --connect-timeout 20 --max-time 600 -o "$archive" \
   "https://github.com/casey/just/releases/download/${JUST_VERSION}/just-${JUST_VERSION}-${triple}.tar.gz"
 echo "${sha}  ${archive}" | sha256sum -c -
 sudo tar -xzf "$archive" -C /usr/local/bin just

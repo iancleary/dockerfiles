@@ -39,17 +39,34 @@ grep -F -q 'smoke-image.sh "$RECIPE" "$LOCAL_TAG"' "$workflow" || fail "workflow
 grep -F -q 'bash openshell/scripts/ci-push.sh' "$workflow" || fail "workflow push command"
 grep -F -q 'steps.push.outputs.digest || steps.build.outputs.digest' "$workflow" || fail "digest selection"
 
-if grep -n 'push=true' openshell/scripts/ci-build.sh | grep -v 'type=image'; then
-  fail "ci-build push flag drifted"
+if grep -n 'push=true' openshell/scripts/ci-build.sh; then
+  fail "ci-build must not push; smoke runs first"
 fi
-push_hits=$(grep -c 'push=true' openshell/scripts/ci-build.sh)
-[[ "$push_hits" == 1 ]] || fail "ci-build should push only the non-harness path"
+grep -F -q 'push=true' openshell/scripts/ci-push.sh || fail "ci-push pushes"
 grep -F -q 'smoke=true' openshell/scripts/ci-build.sh || fail "load path"
+grep -F -q 'version_token' openshell/scripts/smoke-image.sh || fail "version parser"
+if grep -n 'grep -F -q -- "\$want"' openshell/scripts/smoke-image.sh; then
+  fail "version check is still a substring match"
+fi
+grep -F -q 'want 1000' openshell/scripts/smoke-image.sh || fail "uid check"
+if grep -n -- '--user' openshell/scripts/smoke-image.sh | grep -v -E '^[0-9]+:[[:space:]]*#'; then
+  fail "smoke test must not override the image user"
+fi
 grep -F -q 'openshell-ci-${RECIPE}:smoke' openshell/scripts/ci-push.sh || fail "push tag"
 grep -F -q -- '--network none' openshell/scripts/smoke-image.sh || fail "network"
 grep -F -q -- '--offline' openshell/scripts/smoke-image.sh || fail "offline"
 grep -F -q -- '--openshell-smoke' openshell/scripts/smoke-image.sh || fail "flag marker"
 grep -F -q 'OPENSHELL_PI_EXTENSION_OK' openshell/scripts/smoke-image.sh || fail "text marker"
+parse=$(bash openshell/scripts/smoke-image.sh --parse-version '2.1.310 (Claude Code)')
+[[ "$parse" == "2.1.310" ]] || fail "claude version token"
+parse=$(bash openshell/scripts/smoke-image.sh --parse-version 'codex-cli 0.98.0')
+[[ "$parse" == "0.98.0" ]] || fail "codex version token"
+parse=$(bash openshell/scripts/smoke-image.sh --parse-version '0.73.0')
+[[ "$parse" == "0.73.0" ]] || fail "pi version token"
+parse=$(bash openshell/scripts/smoke-image.sh --parse-version '2.1.31')
+[[ "$parse" == "2.1.31" ]] || fail "short version token"
+parse=$(bash openshell/scripts/smoke-image.sh --parse-version '2.1.310')
+[[ "$parse" != "2.1.31" ]] || fail "short version matched a longer release"
 grep -F -q 'just openshell::smoke-pi' openshell/README.md || fail "docs"
 grep -F -q 'smoke-pi:' openshell/justfile || fail "smoke-pi recipe"
 grep -F -q 'all: stacks pi codex claude smoke' openshell/justfile || fail "all runs smoke"

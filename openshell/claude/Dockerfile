@@ -8,7 +8,7 @@ FROM ${BASE_IMAGE}
 
 # hadolint ignore=DL3066
 USER root
-COPY versions/claude.env claude/install-claude.sh /tmp/claude/
+COPY common/harden-runtime.sh versions/claude.env claude/install-claude.sh /tmp/claude/
 RUN bash /tmp/claude/install-claude.sh && rm -rf /tmp/claude
 
 # hadolint ignore=DL3066

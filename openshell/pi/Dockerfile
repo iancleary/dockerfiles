@@ -8,7 +8,7 @@ FROM ${BASE_IMAGE}
 
 # hadolint ignore=DL3066
 USER root
-COPY versions/pi.env pi/install-pi.sh /tmp/pi/
+COPY common/harden-runtime.sh versions/pi.env pi/install-pi.sh /tmp/pi/
 RUN bash /tmp/pi/install-pi.sh && rm -rf /tmp/pi
 
 # hadolint ignore=DL3066

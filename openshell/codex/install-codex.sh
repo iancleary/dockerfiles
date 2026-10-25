@@ -8,6 +8,8 @@ set -a
 # shellcheck disable=SC1091
 . "$here/codex.env"
 set +a
+# shellcheck disable=SC1091
+. "$here/harden-runtime.sh"
 
 : "${CODEX_VERSION:?CODEX_VERSION is required}"
 : "${CODEX_SHA256_AMD64:?CODEX_SHA256_AMD64 is required}"
@@ -37,7 +39,8 @@ esac
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 archive=$tmp/codex.tgz
-curl -fsSL -o "$archive" \
+curl -fsSL --proto '=https' --tlsv1.2 --retry 5 --retry-all-errors --retry-delay 2 \
+  --connect-timeout 20 --max-time 600 -o "$archive" \
   "https://github.com/openai/codex/releases/download/rust-v${CODEX_VERSION}/codex-${triple}.tar.gz"
 echo "${codex_sha}  ${archive}" | sha256sum -c -
 tar -xzf "$archive" -C "$tmp"
@@ -49,3 +52,4 @@ codex --version
 apt-get purge -y curl
 apt-get autoremove -y
 rm -rf /var/lib/apt/lists/*
+harden_runtime

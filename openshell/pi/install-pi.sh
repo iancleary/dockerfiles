@@ -9,6 +9,8 @@ set -a
 # shellcheck disable=SC1091
 . "$here/pi.env"
 set +a
+# shellcheck disable=SC1091
+. "$here/harden-runtime.sh"
 
 : "${PI_VERSION:?PI_VERSION is required}"
 : "${PI_SHA256_AMD64:?PI_SHA256_AMD64 is required}"
@@ -39,7 +41,8 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
 pi_archive=$tmp/pi.tgz
-curl -fsSL -o "$pi_archive" \
+curl -fsSL --proto '=https' --tlsv1.2 --retry 5 --retry-all-errors --retry-delay 2 \
+  --connect-timeout 20 --max-time 600 -o "$pi_archive" \
   "https://github.com/earendil-works/pi/releases/download/v${PI_VERSION}/${pi_asset}"
 echo "${pi_sha}  ${pi_archive}" | sha256sum -c -
 tar -xzf "$pi_archive" -C "$tmp"
@@ -57,9 +60,9 @@ if [[ "$pi_got" != "$PI_VERSION" ]]; then
   exit 1
 fi
 
-mkdir -p /tmp/pi-agent
-chown 1000:1000 /tmp/pi-agent
+install -d -m 0755 -o 1000 -g 1000 /tmp/pi-agent
 
 apt-get purge -y curl
 apt-get autoremove -y
 rm -rf /var/lib/apt/lists/*
+harden_runtime

@@ -20,7 +20,7 @@ bash "$script" "$root/agent-cli/Dockerfile" "$root" \
   FD_VERSION RG_VERSION JUST_VERSION
 bash "$script" "$root/python/Dockerfile" "$root" \
   "${OPENSHELL_PYTHON_TAG:-openshell-python:phase1}" \
-  UV_VERSION PYTHON_VERSION PRE_COMMIT_VERSION
+  UV_VERSION PYTHON_VERSION PYTHON_STANDALONE_TAG PRE_COMMIT_VERSION
 bash "$script" "$root/rust/Dockerfile" "$root" \
   "${OPENSHELL_RUST_TAG:-openshell-rust:phase1}" \
   RUST_VERSION

@@ -125,4 +125,22 @@ if grep -n 'quote(justfile())' openshell/justfile; then
   fail "module recipes must not call justfile()"
 fi
 
+printf 'hello\n' >"$tmp/blob"
+good=$(sha256sum "$tmp/blob" | awk '{print $1}')
+verify_sha256_file "$tmp/blob" "$good" "fixture"
+bad=$(printf 'ab%.0s' {1..32})
+if (verify_sha256_file "$tmp/blob" "$bad" "fixture") 2>/dev/null; then
+  fail "checksum mismatch was accepted"
+fi
+assert_same_checksum "$good" "$good" "same"
+assert_same_checksum "$good" "" "one source"
+if (assert_same_checksum "$good" "$bad" "asset") 2>/dev/null; then
+  fail "checksum disagreement was accepted"
+fi
+assert_eq "attestation verified" "$(classify_attestation_output 0 'ok')" "verified"
+assert_eq "attestation absent" "$(classify_attestation_output 1 'Error: HTTP 404: Not Found')" "absent"
+status=0
+classify_attestation_output 1 'signature is invalid' >/dev/null || status=$?
+[[ "$status" -ne 0 ]] || fail "bad attestation was accepted"
+
 printf 'bump version tests passed\n'

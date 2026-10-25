@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Push the image ci-build.sh loaded, by digest, after the smoke test.
 # The second build is the cached result of that load. The pushed config
-# digest has to match the image that was smoked.
+# digest has to match the image that was smoked. Every recipe uses this path.
 set -euo pipefail
 
 : "${PLATFORM:?PLATFORM is required}"
@@ -11,9 +11,9 @@ set -euo pipefail
 : "${GITHUB_OUTPUT:?GITHUB_OUTPUT is required}"
 
 case "$RECIPE" in
-  pi | codex | claude) ;;
+  agent-cli | python | rust | go | pi | codex | claude) ;;
   *)
-    printf 'ci-push.sh is only for smoked images, got %s\n' "$RECIPE" >&2
+    printf 'unknown recipe %s\n' "$RECIPE" >&2
     exit 1
     ;;
 esac
