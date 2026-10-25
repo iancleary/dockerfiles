@@ -11,7 +11,7 @@ set -euo pipefail
 : "${GITHUB_OUTPUT:?GITHUB_OUTPUT is required}"
 
 case "$RECIPE" in
-  pi | codex | claude) ;;
+  pi | codex | claude | codex-pi) ;;
   *)
     printf 'ci-push.sh is only for smoked images, got %s\n' "$RECIPE" >&2
     exit 1

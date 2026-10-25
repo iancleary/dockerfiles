@@ -55,6 +55,7 @@ jobs:
       build_go: ${{ steps.plan.outputs.build_go }}
       build_pi: ${{ steps.plan.outputs.build_pi }}
       build_codex: ${{ steps.plan.outputs.build_codex }}
+      build_codex_pi: ${{ steps.plan.outputs.build_codex_pi }}
       build_claude: ${{ steps.plan.outputs.build_claude }}
     steps:
       - name: Checkout
@@ -113,6 +114,7 @@ jobs:
         needs.plan.outputs.build_go == 'true' ||
         needs.plan.outputs.build_pi == 'true' ||
         needs.plan.outputs.build_codex == 'true' ||
+        needs.plan.outputs.build_codex_pi == 'true' ||
         needs.plan.outputs.build_claude == 'true'
       )
     runs-on: ubuntu-24.04
@@ -295,6 +297,31 @@ jobs:
       base_digest: ${{ needs.agent-cli.outputs.digest != '' && needs.agent-cli.outputs.digest || needs.resolve-parent.outputs.agent_cli_digest }}
       base_image: ${{ format('ghcr.io/iancleary/openshell-agent-cli@{0}', needs.agent-cli.outputs.digest != '' && needs.agent-cli.outputs.digest || needs.resolve-parent.outputs.agent_cli_digest) }}
 
+  codex-pi:
+    needs: [plan, agent-cli, resolve-parent]
+    if: |
+      always() &&
+      needs.plan.result == 'success' &&
+      needs.plan.outputs.build_codex_pi == 'true' &&
+      (needs.agent-cli.result == 'success' || needs.agent-cli.result == 'skipped') &&
+      (needs.resolve-parent.result == 'success' || needs.resolve-parent.result == 'skipped')
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/openshell-build-image.yml
+    with:
+      recipe: codex-pi
+      image: ghcr.io/iancleary/openshell-codex-pi
+      publish: ${{ needs.plan.outputs.publish }}
+      image_version: ${{ needs.plan.outputs.image_version }}
+      short_sha: ${{ needs.plan.outputs.short_sha }}
+      git_sha: ${{ needs.plan.outputs.git_sha }}
+      no_cache: ${{ needs.plan.outputs.no_cache == 'true' }}
+      base_digest: ${{ needs.agent-cli.outputs.digest != '' && needs.agent-cli.outputs.digest || needs.resolve-parent.outputs.agent_cli_digest }}
+      base_image: ${{ format('ghcr.io/iancleary/openshell-agent-cli@{0}', needs.agent-cli.outputs.digest != '' && needs.agent-cli.outputs.digest || needs.resolve-parent.outputs.agent_cli_digest) }}
+
   claude:
     needs: [plan, agent-cli, resolve-parent]
     if: |
@@ -321,7 +348,7 @@ jobs:
       base_image: ${{ format('ghcr.io/iancleary/openshell-agent-cli@{0}', needs.agent-cli.outputs.digest != '' && needs.agent-cli.outputs.digest || needs.resolve-parent.outputs.agent_cli_digest) }}
 
   release:
-    needs: [plan, agent-cli, python, rust, go, pi, codex, claude]
+    needs: [plan, agent-cli, python, rust, go, pi, codex, codex-pi, claude]
     if: |
       always() &&
       needs.plan.result == 'success' &&
@@ -332,6 +359,7 @@ jobs:
       (needs.plan.outputs.build_go != 'true' || needs.go.result == 'success') &&
       (needs.plan.outputs.build_pi != 'true' || needs.pi.result == 'success') &&
       (needs.plan.outputs.build_codex != 'true' || needs.codex.result == 'success') &&
+      (needs.plan.outputs.build_codex_pi != 'true' || needs.codex-pi.result == 'success') &&
       (needs.plan.outputs.build_claude != 'true' || needs.claude.result == 'success')
     runs-on: ubuntu-24.04
     timeout-minutes: 10

@@ -42,6 +42,7 @@ Multi-arch (linux/amd64, linux/arm64) manifest lists, also tagged :latest:
 - ghcr.io/iancleary/openshell-go:${IMAGE_VERSION}
 - ghcr.io/iancleary/openshell-pi:${IMAGE_VERSION}
 - ghcr.io/iancleary/openshell-codex:${IMAGE_VERSION}
+- ghcr.io/iancleary/openshell-codex-pi:${IMAGE_VERSION}
 - ghcr.io/iancleary/openshell-claude:${IMAGE_VERSION}
 
 :edge is unchanged by this release.

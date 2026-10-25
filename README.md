@@ -22,9 +22,11 @@ just openshell::build
 
 Images are multi-arch (`linux/amd64` and `linux/arm64`). There is no
 `openshell-common` image. `openshell-agent-cli` is the shared base. The
-harness images `openshell-pi`, `openshell-codex`, and `openshell-claude`
-are published on that base. They replace the old local tags
+harness images `openshell-pi`, `openshell-codex`, `openshell-codex-pi`, and
+`openshell-claude` are published on that base. `openshell-pi`,
+`openshell-codex`, and `openshell-claude` replace the old local tags
 `openshell-pi:phase1`, `openshell-codex:phase1`, and `openshell-claude:phase1`.
+The combined image's local tag is `openshell-codex-pi:phase1`.
 
 ```sh
 docker pull ghcr.io/iancleary/openshell-agent-cli:latest
@@ -33,6 +35,7 @@ docker pull ghcr.io/iancleary/openshell-rust:latest
 docker pull ghcr.io/iancleary/openshell-go:latest
 docker pull ghcr.io/iancleary/openshell-pi:latest
 docker pull ghcr.io/iancleary/openshell-codex:latest
+docker pull ghcr.io/iancleary/openshell-codex-pi:latest
 docker pull ghcr.io/iancleary/openshell-claude:latest
 ```
 
@@ -95,7 +98,9 @@ commits to `main` only when the builds pass. Details, the release lines,
 and the 60-day schedule caveat are in the
 [OpenShell README](openshell/README.md). CPython stays on 3.13. Rust, Go,
 and Pi stay on the pinned minor until that number is edited by hand. The
-Pi image does not include Node.
+Pi image does not include Node. `openshell-codex-pi` installs the same
+Codex musl binary and the same Pi tree. It does not add a version file or
+Node. Codex does not need Node; the weekly bump already tracks both pins.
 
 Workflow runs attest the arch images and the manifest list with
 `actions/attest-build-provenance` and sign them with keyless cosign
@@ -124,6 +129,7 @@ once per package, under package settings:
 - [openshell-go](https://github.com/users/iancleary/packages/container/openshell-go/settings)
 - [openshell-pi](https://github.com/users/iancleary/packages/container/openshell-pi/settings)
 - [openshell-codex](https://github.com/users/iancleary/packages/container/openshell-codex/settings)
+- [openshell-codex-pi](https://github.com/users/iancleary/packages/container/openshell-codex-pi/settings)
 - [openshell-claude](https://github.com/users/iancleary/packages/container/openshell-claude/settings)
 
 The source label should already connect the package to

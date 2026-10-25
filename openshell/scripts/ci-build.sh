@@ -13,7 +13,7 @@ set -euo pipefail
 : "${GITHUB_OUTPUT:?GITHUB_OUTPUT is required}"
 
 case "$RECIPE" in
-  agent-cli | python | rust | go | pi | codex | claude) ;;
+  agent-cli | python | rust | go | pi | codex | claude | codex-pi) ;;
   *)
     printf 'unknown recipe %s\n' "$RECIPE" >&2
     exit 1
@@ -47,12 +47,13 @@ meta=${RUNNER_TEMP}/meta.json
 flags+=(--metadata-file "$meta")
 
 case "$RECIPE" in
-  pi | codex | claude)
+  pi | codex | claude | codex-pi)
     local_tag="openshell-ci-${RECIPE}:smoke"
     case "$RECIPE" in
       pi) export OPENSHELL_PI_TAG=$local_tag ;;
       codex) export OPENSHELL_CODEX_TAG=$local_tag ;;
       claude) export OPENSHELL_CLAUDE_TAG=$local_tag ;;
+      codex-pi) export OPENSHELL_CODEX_PI_TAG=$local_tag ;;
     esac
     flags+=(--output=type=docker)
     export OPENSHELL_BUILDX=1
