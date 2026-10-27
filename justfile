@@ -2,6 +2,7 @@
 # `just --list --list-submodules` shows every recipe.
 
 mod openshell
+mod dev-images
 
 # List image families.
 default:

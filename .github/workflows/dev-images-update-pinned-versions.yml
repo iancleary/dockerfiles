@@ -1,0 +1,211 @@
+name: Dev images pinned version update
+
+# Monday 13:30 UTC is 06:30 America/Phoenix (UTC-7, no daylight saving).
+# The OpenShell version update runs at 13:00 UTC. This workflow is thirty
+# minutes later so the two pushes to main do not collide. A GITHUB_TOKEN
+# push does not start other workflows; the publish job dispatches Publish
+# dev images with publish=release, which skips the age and change gates.
+#
+# Verify builds dev-base on both architectures, smoke-tests it, and does
+# not push. A failed verify commits nothing. Toolchains are not updated.
+
+on:
+  schedule:
+    - cron: "30 13 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dev-images-update-pinned-versions
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    outputs:
+      changed: ${{ steps.update.outputs.changed }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Update pinned version files
+        id: update
+        env:
+          DEV_IMAGES_UPDATE_CACHE: ${{ runner.temp }}/version-cache
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "run this workflow from main; refusing ${GITHUB_REF}" >&2
+            exit 1
+          fi
+          summary="${RUNNER_TEMP}/summary.txt"
+          bash dev-images/scripts/update_pinned_versions.sh --summary-file "$summary"
+          if git diff --quiet -- dev-images/versions; then
+            echo "changed=false" >>"$GITHUB_OUTPUT"
+            echo "No version changes." >>"$GITHUB_STEP_SUMMARY"
+          else
+            mkdir -p version-out
+            git diff --binary -- dev-images/versions >version-out/version.patch
+            cp "$summary" version-out/summary.txt
+            echo "changed=true" >>"$GITHUB_OUTPUT"
+            {
+              echo "### Pinned version updates"
+              echo
+              sed 's/^/- /' version-out/summary.txt
+            } >>"$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload the patch
+        if: steps.update.outputs.changed == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dev-images-pinned-version-patch
+          path: version-out/
+          if-no-files-found: error
+          retention-days: 7
+
+  verify:
+    needs: update
+    if: needs.update.outputs.changed == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Download the patch
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dev-images-pinned-version-patch
+          path: version-out
+
+      - name: Apply the patch
+        run: |
+          set -euo pipefail
+          git apply --check version-out/version.patch
+          git apply version-out/version.patch
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Install just
+        run: bash openshell/scripts/install-just.sh
+
+      - name: Build and smoke-test dev-base (${{ matrix.arch }})
+        run: just dev-images::all
+
+  publish:
+    needs: [update, verify]
+    if: needs.update.outputs.changed == 'true' && needs.verify.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Download the patch
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dev-images-pinned-version-patch
+          path: version-out
+
+      - name: Commit, rebase, and dispatch the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          git apply --check version-out/version.patch
+          git apply version-out/version.patch
+          git add -- dev-images/versions
+          git diff --cached --quiet && {
+            echo "patch produced no staged changes" >&2
+            exit 1
+          }
+          bot_id=41898282
+          bot_login="github-actions[bot]"
+          git config user.name "$bot_login"
+          domain="users.noreply.github.com"
+          git config user.email "${bot_id}+${bot_login}@${domain}"
+          mapfile -t lines <version-out/summary.txt
+          if [[ ${#lines[@]} -eq 0 ]]; then
+            echo "summary is empty" >&2
+            exit 1
+          fi
+          if [[ ${#lines[@]} -eq 1 ]]; then
+            git commit -m "${lines[0]}"
+          else
+            {
+              printf 'update dev image pinned versions\n\n'
+              printf '%s\n' "${lines[@]}"
+            } >"${RUNNER_TEMP}/commit-message.txt"
+            git commit -F "${RUNNER_TEMP}/commit-message.txt"
+          fi
+          pushed=false
+          attempt=1
+          while ((attempt <= 4)); do
+            git fetch origin main
+            git rebase origin/main
+            if git push origin HEAD:main; then
+              pushed=true
+              break
+            fi
+            sleep $((attempt * 4))
+            attempt=$((attempt + 1))
+          done
+          if [[ "$pushed" != true ]]; then
+            echo "push to main failed after rebase retries" >&2
+            exit 1
+          fi
+          gh workflow run dev-images-publish.yml --repo "$GH_REPO" --ref main -f publish=release
+
+  notify:
+    needs: [update, verify, publish]
+    if: always() && (needs.update.result == 'failure' || needs.verify.result == 'failure' || needs.publish.result == 'failure')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update the failure issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          title="Dev images pinned version update failed"
+          url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          body=$(printf '%s\n' \
+            "The dev images pinned version update failed." \
+            "Run: ${url}" \
+            "A failed image build commits nothing. A failed publish may have pushed the version commit before the release dispatch; check main before re-running.")
+          number=$(gh issue list --repo "$GH_REPO" --state open --limit 50 --json number,title \
+            --jq '[.[] | select(.title == "Dev images pinned version update failed") | .number][0] // empty')
+          if [[ -n "$number" ]]; then
+            gh issue comment "$number" --repo "$GH_REPO" --body "$body"
+          else
+            gh issue create --repo "$GH_REPO" --title "$title" --body "$body"
+          fi
