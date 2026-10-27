@@ -4,9 +4,14 @@ on:
   workflow_call:
     inputs:
       recipe:
-        description: Image recipe. base is the only recipe in this phase.
+        description: Image recipe. base, go, rust, node, python, zig, or bun.
         required: true
         type: string
+      parent_image:
+        description: dev-base image reference for a language recipe. Empty for base.
+        required: false
+        type: string
+        default: ""
       image:
         description: ghcr.io image name without a tag
         required: true
@@ -44,7 +49,7 @@ jobs:
       packages: write
       id-token: write
       attestations: write
-    timeout-minutes: 45
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -77,6 +82,7 @@ jobs:
           IMAGE: ${{ inputs.image }}
           RECIPE: ${{ inputs.recipe }}
           NO_CACHE: ${{ inputs.no_cache }}
+          PARENT_IMAGE: ${{ inputs.parent_image }}
           DEV_IMAGES_GIT_SHA: ${{ inputs.git_sha }}
           DEV_IMAGES_IMAGE_VERSION: ${{ inputs.image_version }}
         run: bash dev-images/scripts/build_image.sh
@@ -85,7 +91,8 @@ jobs:
         if: steps.build.outputs.smoke == 'true'
         env:
           LOCAL_TAG: ${{ steps.build.outputs.local_tag }}
-        run: bash dev-images/scripts/smoke_test_image.sh "$LOCAL_TAG"
+          RECIPE: ${{ inputs.recipe }}
+        run: bash dev-images/scripts/smoke_test_image.sh "$LOCAL_TAG" "$RECIPE"
 
       - name: Push smoked image by digest
         id: push
@@ -94,6 +101,7 @@ jobs:
           PLATFORM: ${{ matrix.platform }}
           IMAGE: ${{ inputs.image }}
           RECIPE: ${{ inputs.recipe }}
+          PARENT_IMAGE: ${{ inputs.parent_image }}
           DEV_IMAGES_GIT_SHA: ${{ inputs.git_sha }}
           DEV_IMAGES_IMAGE_VERSION: ${{ inputs.image_version }}
         run: bash dev-images/scripts/push_image_by_digest.sh

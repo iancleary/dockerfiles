@@ -39,10 +39,13 @@ if [[ "$status" -ne 2 ]]; then
 fi
 grep -F -q 'refusing to downgrade' "$temporary/downgrade.err" || fail "downgrade message"
 
-for forbidden in 'go.dev' 'nodejs.org' 'static.rust-lang.org' 'python-build-standalone' 'claude' 'codex'; do
+for forbidden in 'claude' 'codex'; do
   if grep -F -q "$forbidden" "$updater"; then
     fail "updater tracks $forbidden"
   fi
+done
+for required in 'go.dev' 'nodejs.org' 'static.rust-lang.org' 'python-build-standalone' 'ziglang.org' 'latest_stable'; do
+  grep -F -q "$required" "$updater" || fail "updater omits $required"
 done
 
 grep -F -q 'latest_stable' "$updater" || fail "policy name"
@@ -56,8 +59,17 @@ fi
 version_directory=$root/dev-images/versions
 for version_file in "$version_directory"/*.env; do
   base=$(basename "$version_file" .env)
-  [[ "$base" == debian ]] && continue
-  grep -F -q "update_github_release_tool ${base} " "$updater" || fail "catalog omits $base"
+  case "$base" in
+    debian | development-base-image) continue ;;
+  esac
+  case "$base" in
+    go | node | python | rust | zig)
+      grep -F -q "update_${base}_toolchain" "$updater" || fail "catalog omits $base"
+      ;;
+    *)
+      grep -F -q "update_github_release_tool ${base} " "$updater" || fail "catalog omits $base"
+      ;;
+  esac
 done
 
 openshell_digest=$(grep -E '^DEBIAN_IMAGE=' "$root/openshell/versions/base.env")

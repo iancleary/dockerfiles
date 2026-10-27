@@ -43,6 +43,10 @@ grep -F -q 'expect_ahi_version' "$smoke" || fail "ahi check"
 # shellcheck disable=SC2016
 grep -F -q 'ahi ${want}' "$smoke" || fail "ahi version text"
 grep -F -q 'AHI_VERSION' "$smoke" || fail "ahi recorded version"
+for recorded in GO_VERSION RUST_VERSION NODE_VERSION PNPM_VERSION PYTHON_VERSION ZIG_VERSION BUN_VERSION; do
+  grep -F -q "$recorded" "$smoke" || fail "smoke omits $recorded"
+done
+grep -F -q 'assert_command_absent node' "$smoke" || fail "bun image may contain node"
 
 workflow=$root/.github/workflows/dev-images-build-single-image.yml
 smoke_line=$(grep -n 'smoke_test_image.sh' "$workflow" | head -n 1 | cut -d: -f1)

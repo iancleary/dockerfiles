@@ -24,6 +24,12 @@ fi
 
 images=(
   base
+  go
+  rust
+  node
+  python
+  zig
+  bun
 )
 
 registry=ghcr.io/iancleary
@@ -77,6 +83,12 @@ Development images ${IMAGE_VERSION}.
 Multi-arch (linux/amd64, linux/arm64) manifest list, also tagged :latest:
 
 - ghcr.io/iancleary/dev-base:${IMAGE_VERSION}
+- ghcr.io/iancleary/dev-go:${IMAGE_VERSION}
+- ghcr.io/iancleary/dev-rust:${IMAGE_VERSION}
+- ghcr.io/iancleary/dev-node:${IMAGE_VERSION}
+- ghcr.io/iancleary/dev-python:${IMAGE_VERSION}
+- ghcr.io/iancleary/dev-zig:${IMAGE_VERSION}
+- ghcr.io/iancleary/dev-bun:${IMAGE_VERSION}
 
 :edge is unchanged by this release.
 

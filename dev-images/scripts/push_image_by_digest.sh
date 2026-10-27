@@ -11,16 +11,20 @@ set -euo pipefail
 : "${RUNNER_TEMP:?RUNNER_TEMP is required}"
 : "${GITHUB_OUTPUT:?GITHUB_OUTPUT is required}"
 
-if [[ "$RECIPE" != base ]]; then
-  printf 'unknown recipe %s\n' "$RECIPE" >&2
-  exit 1
-fi
-
 script_directory=$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 # shellcheck disable=SC1091
 source "$script_directory/build_image.sh"
 
-local_tag=dev-images-ci-base:smoke
+if ! known_recipe "$RECIPE"; then
+  printf 'unknown recipe %s\n' "$RECIPE" >&2
+  exit 1
+fi
+if [[ "$RECIPE" != base && -z "${PARENT_IMAGE:-}" ]]; then
+  printf 'PARENT_IMAGE is required for recipe %s\n' "$RECIPE" >&2
+  exit 1
+fi
+
+local_tag=$(continuous_integration_local_tag "$RECIPE")
 if ! docker image inspect "$local_tag" >/dev/null 2>&1; then
   printf 'smoked image %s is not loaded\n' "$local_tag" >&2
   exit 1

@@ -1,8 +1,9 @@
-name: Verify dev-base pull request
+name: Verify development image pull request
 
-# A pull request that changes the development image or its workflows builds
-# dev-base on native amd64 and arm64 runners and smoke-tests the loaded image.
-# This workflow does not log in, does not push, and does not create a release.
+# A pull request that changes a development image or its workflows builds
+# dev-base, then each language image, on native amd64 and arm64 runners.
+# Each image is smoke-tested offline. This workflow does not log in, does
+# not push, and does not create a release.
 
 on:
   pull_request:
@@ -22,10 +23,10 @@ concurrency:
 
 jobs:
   build:
-    name: dev-base (${{ matrix.platform }})
+    name: development images (${{ matrix.platform }})
     permissions:
       contents: read
-    timeout-minutes: 45
+    timeout-minutes: 150
     strategy:
       fail-fast: false
       matrix:
@@ -40,10 +41,15 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Buildx
+        # The docker driver shares the engine image store, so a language
+        # image can use the dev-base tag loaded earlier in this job.
+        # The container driver cannot see that local tag.
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          driver: docker
 
-      - name: Build image
-        id: build
+      - name: Build dev-base
+        id: base
         env:
           PLATFORM: ${{ matrix.platform }}
           IMAGE: ghcr.io/iancleary/dev-base
@@ -53,8 +59,104 @@ jobs:
           DEV_IMAGES_IMAGE_VERSION: pull-request
         run: bash dev-images/scripts/build_image.sh
 
-      - name: Smoke test
-        if: steps.build.outputs.smoke == 'true'
+      - name: Smoke dev-base
+        if: steps.base.outputs.smoke == 'true'
         env:
-          LOCAL_TAG: ${{ steps.build.outputs.local_tag }}
-        run: bash dev-images/scripts/smoke_test_image.sh "$LOCAL_TAG"
+          LOCAL_TAG: ${{ steps.base.outputs.local_tag }}
+        run: bash dev-images/scripts/smoke_test_image.sh "$LOCAL_TAG" base
+
+      - name: Build dev-go
+        id: go
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          IMAGE: ghcr.io/iancleary/dev-go
+          RECIPE: go
+          PARENT_IMAGE: ${{ steps.base.outputs.local_tag }}
+          NO_CACHE: false
+          DEV_IMAGES_GIT_SHA: ${{ github.sha }}
+          DEV_IMAGES_IMAGE_VERSION: pull-request
+        run: bash dev-images/scripts/build_image.sh
+
+      - name: Smoke dev-go
+        if: steps.go.outputs.smoke == 'true'
+        run: bash dev-images/scripts/smoke_test_image.sh "${{ steps.go.outputs.local_tag }}" go
+
+      - name: Build dev-rust
+        id: rust
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          IMAGE: ghcr.io/iancleary/dev-rust
+          RECIPE: rust
+          PARENT_IMAGE: ${{ steps.base.outputs.local_tag }}
+          NO_CACHE: false
+          DEV_IMAGES_GIT_SHA: ${{ github.sha }}
+          DEV_IMAGES_IMAGE_VERSION: pull-request
+        run: bash dev-images/scripts/build_image.sh
+
+      - name: Smoke dev-rust
+        if: steps.rust.outputs.smoke == 'true'
+        run: bash dev-images/scripts/smoke_test_image.sh "${{ steps.rust.outputs.local_tag }}" rust
+
+      - name: Build dev-node
+        id: node
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          IMAGE: ghcr.io/iancleary/dev-node
+          RECIPE: node
+          PARENT_IMAGE: ${{ steps.base.outputs.local_tag }}
+          NO_CACHE: false
+          DEV_IMAGES_GIT_SHA: ${{ github.sha }}
+          DEV_IMAGES_IMAGE_VERSION: pull-request
+        run: bash dev-images/scripts/build_image.sh
+
+      - name: Smoke dev-node
+        if: steps.node.outputs.smoke == 'true'
+        run: bash dev-images/scripts/smoke_test_image.sh "${{ steps.node.outputs.local_tag }}" node
+
+      - name: Build dev-python
+        id: python
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          IMAGE: ghcr.io/iancleary/dev-python
+          RECIPE: python
+          PARENT_IMAGE: ${{ steps.base.outputs.local_tag }}
+          NO_CACHE: false
+          DEV_IMAGES_GIT_SHA: ${{ github.sha }}
+          DEV_IMAGES_IMAGE_VERSION: pull-request
+        run: bash dev-images/scripts/build_image.sh
+
+      - name: Smoke dev-python
+        if: steps.python.outputs.smoke == 'true'
+        run: bash dev-images/scripts/smoke_test_image.sh "${{ steps.python.outputs.local_tag }}" python
+
+      - name: Build dev-zig
+        id: zig
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          IMAGE: ghcr.io/iancleary/dev-zig
+          RECIPE: zig
+          PARENT_IMAGE: ${{ steps.base.outputs.local_tag }}
+          NO_CACHE: false
+          DEV_IMAGES_GIT_SHA: ${{ github.sha }}
+          DEV_IMAGES_IMAGE_VERSION: pull-request
+        run: bash dev-images/scripts/build_image.sh
+
+      - name: Smoke dev-zig
+        if: steps.zig.outputs.smoke == 'true'
+        run: bash dev-images/scripts/smoke_test_image.sh "${{ steps.zig.outputs.local_tag }}" zig
+
+      - name: Build dev-bun
+        id: bun
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          IMAGE: ghcr.io/iancleary/dev-bun
+          RECIPE: bun
+          PARENT_IMAGE: ${{ steps.base.outputs.local_tag }}
+          NO_CACHE: false
+          DEV_IMAGES_GIT_SHA: ${{ github.sha }}
+          DEV_IMAGES_IMAGE_VERSION: pull-request
+        run: bash dev-images/scripts/build_image.sh
+
+      - name: Smoke dev-bun
+        if: steps.bun.outputs.smoke == 'true'
+        run: bash dev-images/scripts/smoke_test_image.sh "${{ steps.bun.outputs.local_tag }}" bun

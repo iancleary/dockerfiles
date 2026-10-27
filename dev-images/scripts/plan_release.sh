@@ -10,7 +10,7 @@
 # workflow_dispatch release does not use those gates.
 #
 # stdout is key=value lines for $GITHUB_OUTPUT. Diagnostics go to stderr.
-# Language images are not in this phase. A base input publishes dev-base only.
+# build_base publishes dev-base first. The language images depend on that job.
 set -euo pipefail
 
 event=

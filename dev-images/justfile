@@ -1,7 +1,8 @@
-# Local dev-base builds. Docker Buildx must already be available.
-# The image stays on this machine as dev-base:local unless DEV_BASE_TAG is set.
+# Local development image builds. Docker Buildx must already be available.
+# dev-base is built first. Each language image uses that local image as its
+# parent, so the toolchain layer is the only layer added here.
 # CI calls dev-images/scripts/build_image.sh with PLATFORM set. That path
-# loads dev-images-ci-base:smoke and does not push.
+# loads dev-images-ci-<recipe>:smoke and does not push.
 
 set shell := ["bash", "-euo", "pipefail", "-c"]
 
@@ -35,13 +36,48 @@ _require-docker:
 base: _require-docker
     #!/usr/bin/env bash
     set -euo pipefail
-    bash {{ quote(images / "scripts" / "build_image.sh") }} --tag {{ quote(base_tag) }}
+    bash {{ quote(images / "scripts" / "build_image.sh") }} --recipe base --tag {{ quote(base_tag) }}
 
 # Confirm the pinned tools and the developer account.
 smoke-base: base
     #!/usr/bin/env bash
     set -euo pipefail
-    bash {{ quote(images / "scripts" / "smoke_test_image.sh") }} {{ quote(base_tag) }}
+    bash {{ quote(images / "scripts" / "smoke_test_image.sh") }} {{ quote(base_tag) }} base
 
-# Build dev-base and smoke-test it. Language images are a later phase.
-all: smoke-base
+# Build one language image on the local dev-base image.
+[private]
+_language recipe: base
+    #!/usr/bin/env bash
+    set -euo pipefail
+    PARENT_IMAGE={{ quote(base_tag) }} \
+      bash {{ quote(images / "scripts" / "build_image.sh") }} \
+      --recipe {{ recipe }} \
+      --tag "dev-{{ recipe }}:local"
+
+# Smoke-test one language image.
+[private]
+_smoke-language recipe: (_language recipe)
+    #!/usr/bin/env bash
+    set -euo pipefail
+    bash {{ quote(images / "scripts" / "smoke_test_image.sh") }} "dev-{{ recipe }}:local" {{ recipe }}
+
+# Build and smoke-test dev-go.
+go: (_smoke-language "go")
+
+# Build and smoke-test dev-rust.
+rust: (_smoke-language "rust")
+
+# Build and smoke-test dev-node.
+node: (_smoke-language "node")
+
+# Build and smoke-test dev-python.
+python: (_smoke-language "python")
+
+# Build and smoke-test dev-zig.
+zig: (_smoke-language "zig")
+
+# Build and smoke-test dev-bun.
+bun: (_smoke-language "bun")
+
+# Build every image and smoke-test it.
+all: smoke-base go rust node python zig bun

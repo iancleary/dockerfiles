@@ -28,7 +28,7 @@ fi
 grep -F -q 'DEBIAN_IMAGE' "$builder" || fail "debian image argument"
 
 link_count=$(grep -c 'COPY --link --from=' "$dockerfile")
-tool_count=$(find "$root/dev-images/versions" -name '*.env' ! -name 'debian.env' | wc -l)
+tool_count=$(grep -oE 'versions/[A-Za-z0-9._-]+\.env' "$dockerfile" | sort -u | wc -l)
 if [[ "$link_count" -ne "$tool_count" ]]; then
   fail "COPY --link count $link_count does not match $tool_count tools"
 fi
@@ -41,10 +41,21 @@ fi
 
 for version_file in "$root"/dev-images/versions/*.env; do
   base=$(basename "$version_file")
-  [[ "$base" == debian.env ]] && continue
+  case "$base" in
+    debian.env | development-base-image.env) continue ;;
+  esac
   name=${base%.env}
-  grep -F -q "$name.env" "$dockerfile" || fail "dockerfile omits $name"
+  if ! grep -R -F -q "$name.env" "$root/dev-images" --include=Dockerfile; then
+    fail "dockerfile omits $name"
+  fi
 done
+for recipe in go rust node python zig bun; do
+  language_dockerfile=$root/dev-images/$recipe/Dockerfile
+  [[ -f "$language_dockerfile" ]] || fail "missing $recipe dockerfile"
+  grep -F -q 'FROM development-base' "$language_dockerfile" || fail "$recipe parent"
+  grep -F -q 'COPY --link' "$language_dockerfile" || fail "$recipe link"
+done
+grep -F -q 'development-base=docker-image://' "$builder" || fail "parent build context"
 
 grep -E -q '^permissions:$' "$workflow" || fail "workflow permissions"
 grep -F -q 'contents: read' "$workflow" || fail "contents read"
@@ -54,7 +65,7 @@ grep -F -q 'ubuntu-24.04-arm' "$workflow" || fail "arm64 runner"
 
 justfile=$root/dev-images/justfile
 grep -F -q 'smoke-base' "$justfile" || fail "just smoke recipe"
-grep -F -q 'all: smoke-base' "$justfile" || fail "just all recipe"
+grep -F -q 'all: smoke-base go rust node python zig bun' "$justfile" || fail "just all recipe"
 grep -F -q 'mod dev-images' "$root/justfile" || fail "root module"
 
 pull_request_workflow=$root/.github/workflows/dev-images-verify-pull-request.yml

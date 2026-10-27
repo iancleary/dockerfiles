@@ -1,6 +1,6 @@
 name: Publish dev images
 
-# Push to main publishes :edge and :sha-<short> when a dev-base input changed.
+# Push to main publishes :edge and :sha-<short> when a development image input changed.
 # A GITHUB_TOKEN push does not start this workflow. The pinned-version
 # update workflow dispatches it instead.
 # schedule runs daily at 15:45 UTC (08:45 America/Phoenix). The plan script
@@ -118,13 +118,133 @@ jobs:
       git_sha: ${{ needs.plan.outputs.git_sha }}
       no_cache: ${{ needs.plan.outputs.no_cache == 'true' }}
 
-  release:
+  go:
     needs: [plan, base]
+    if: needs.plan.outputs.build_base == 'true' && needs.base.result == 'success'
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/dev-images-build-single-image.yml
+    with:
+      recipe: go
+      image: ghcr.io/iancleary/dev-go
+      parent_image: ghcr.io/iancleary/dev-base@${{ needs.base.outputs.digest }}
+      publish: ${{ needs.plan.outputs.publish }}
+      image_version: ${{ needs.plan.outputs.image_version }}
+      short_sha: ${{ needs.plan.outputs.short_sha }}
+      git_sha: ${{ needs.plan.outputs.git_sha }}
+      no_cache: ${{ needs.plan.outputs.no_cache == 'true' }}
+
+  rust:
+    needs: [plan, base]
+    if: needs.plan.outputs.build_base == 'true' && needs.base.result == 'success'
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/dev-images-build-single-image.yml
+    with:
+      recipe: rust
+      image: ghcr.io/iancleary/dev-rust
+      parent_image: ghcr.io/iancleary/dev-base@${{ needs.base.outputs.digest }}
+      publish: ${{ needs.plan.outputs.publish }}
+      image_version: ${{ needs.plan.outputs.image_version }}
+      short_sha: ${{ needs.plan.outputs.short_sha }}
+      git_sha: ${{ needs.plan.outputs.git_sha }}
+      no_cache: ${{ needs.plan.outputs.no_cache == 'true' }}
+
+  node:
+    needs: [plan, base]
+    if: needs.plan.outputs.build_base == 'true' && needs.base.result == 'success'
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/dev-images-build-single-image.yml
+    with:
+      recipe: node
+      image: ghcr.io/iancleary/dev-node
+      parent_image: ghcr.io/iancleary/dev-base@${{ needs.base.outputs.digest }}
+      publish: ${{ needs.plan.outputs.publish }}
+      image_version: ${{ needs.plan.outputs.image_version }}
+      short_sha: ${{ needs.plan.outputs.short_sha }}
+      git_sha: ${{ needs.plan.outputs.git_sha }}
+      no_cache: ${{ needs.plan.outputs.no_cache == 'true' }}
+
+  python:
+    needs: [plan, base]
+    if: needs.plan.outputs.build_base == 'true' && needs.base.result == 'success'
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/dev-images-build-single-image.yml
+    with:
+      recipe: python
+      image: ghcr.io/iancleary/dev-python
+      parent_image: ghcr.io/iancleary/dev-base@${{ needs.base.outputs.digest }}
+      publish: ${{ needs.plan.outputs.publish }}
+      image_version: ${{ needs.plan.outputs.image_version }}
+      short_sha: ${{ needs.plan.outputs.short_sha }}
+      git_sha: ${{ needs.plan.outputs.git_sha }}
+      no_cache: ${{ needs.plan.outputs.no_cache == 'true' }}
+
+  zig:
+    needs: [plan, base]
+    if: needs.plan.outputs.build_base == 'true' && needs.base.result == 'success'
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/dev-images-build-single-image.yml
+    with:
+      recipe: zig
+      image: ghcr.io/iancleary/dev-zig
+      parent_image: ghcr.io/iancleary/dev-base@${{ needs.base.outputs.digest }}
+      publish: ${{ needs.plan.outputs.publish }}
+      image_version: ${{ needs.plan.outputs.image_version }}
+      short_sha: ${{ needs.plan.outputs.short_sha }}
+      git_sha: ${{ needs.plan.outputs.git_sha }}
+      no_cache: ${{ needs.plan.outputs.no_cache == 'true' }}
+
+  bun:
+    needs: [plan, base]
+    if: needs.plan.outputs.build_base == 'true' && needs.base.result == 'success'
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/dev-images-build-single-image.yml
+    with:
+      recipe: bun
+      image: ghcr.io/iancleary/dev-bun
+      parent_image: ghcr.io/iancleary/dev-base@${{ needs.base.outputs.digest }}
+      publish: ${{ needs.plan.outputs.publish }}
+      image_version: ${{ needs.plan.outputs.image_version }}
+      short_sha: ${{ needs.plan.outputs.short_sha }}
+      git_sha: ${{ needs.plan.outputs.git_sha }}
+      no_cache: ${{ needs.plan.outputs.no_cache == 'true' }}
+
+  release:
+    needs: [plan, base, go, rust, node, python, zig, bun]
     if: |
       always() &&
       needs.plan.result == 'success' &&
       needs.plan.outputs.publish == 'release' &&
-      (needs.plan.outputs.build_base != 'true' || needs.base.result == 'success')
+      needs.base.result == 'success' &&
+      needs.go.result == 'success' &&
+      needs.rust.result == 'success' &&
+      needs.node.result == 'success' &&
+      needs.python.result == 'success' &&
+      needs.zig.result == 'success' &&
+      needs.bun.result == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     # contents: write creates the calver git tag and GitHub Release.
@@ -156,16 +276,28 @@ jobs:
           IMAGE_VERSION: ${{ needs.plan.outputs.image_version }}
           GH_TOKEN: ${{ github.token }}
           DIGEST_base: ${{ needs.base.outputs.digest }}
+          DIGEST_go: ${{ needs.go.outputs.digest }}
+          DIGEST_rust: ${{ needs.rust.outputs.digest }}
+          DIGEST_node: ${{ needs.node.outputs.digest }}
+          DIGEST_python: ${{ needs.python.outputs.digest }}
+          DIGEST_zig: ${{ needs.zig.outputs.digest }}
+          DIGEST_bun: ${{ needs.bun.outputs.digest }}
         run: bash dev-images/scripts/publish_release.sh
 
   notify:
-    needs: [plan, base, release]
+    needs: [plan, base, go, rust, node, python, zig, bun, release]
     if: |
       always() &&
       github.event_name == 'schedule' &&
       (
         needs.plan.result == 'failure' ||
         needs.base.result == 'failure' ||
+        needs.go.result == 'failure' ||
+        needs.rust.result == 'failure' ||
+        needs.node.result == 'failure' ||
+        needs.python.result == 'failure' ||
+        needs.zig.result == 'failure' ||
+        needs.bun.result == 'failure' ||
         needs.release.result == 'failure'
       )
     runs-on: ubuntu-24.04
