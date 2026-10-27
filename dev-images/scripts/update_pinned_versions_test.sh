@@ -64,12 +64,12 @@ openshell_digest=$(grep -E '^DEBIAN_IMAGE=' "$root/openshell/versions/base.env")
 development_digest=$(grep -E '^DEBIAN_IMAGE=' "$version_directory/debian.env")
 [[ "$openshell_digest" == "$development_digest" ]] || fail "debian digests start unequal"
 
-grep -F -q 'AHI_VERSION=0.1.2' "$version_directory/ahi.env" || fail "ahi version"
-grep -F -q 'AHI_SHA256_AMD64=9ada7392cea8154c34fded687b5ffd577c263a73c1de6ba461b6df5a14370e2f' \
+grep -F -q 'AHI_VERSION=0.1.3' "$version_directory/ahi.env" || fail "ahi version"
+grep -F -q 'AHI_SHA256_AMD64=59479bee2dc0a3fd092aaa9705472d44ca953ea3f2e6dbef0e93df925441e4df' \
   "$version_directory/ahi.env" || fail "ahi amd64 checksum"
-grep -F -q 'AHI_SHA256_ARM64=2e37d05f3a4d634fb04f9b98fba1e8d6f2a26dcb51abb31744ffa5f275ab609e' \
+grep -F -q 'AHI_SHA256_ARM64=bae5d3cba3c116e2224c02fe37d5020fb9db2bf9ad843221fb090bed783da181' \
   "$version_directory/ahi.env" || fail "ahi arm64 checksum"
-grep -F -q 'ahi-0.1.2-sha256sums.txt' "$version_directory/ahi.env" || fail "ahi checksum source"
+grep -F -q 'ahi-0.1.3-sha256sums.txt' "$version_directory/ahi.env" || fail "ahi checksum source"
 
 workflow=$root/.github/workflows/dev-images-update-pinned-versions.yml
 grep -q 'cron: "30 13 \* \* 1"' "$workflow" || fail "update cron"
