@@ -73,6 +73,7 @@ compose_development_base_build_command() {
     --build-arg "IMAGE_TITLE=dev-base"
     --build-arg "BASE_DIGEST=${base_digest}"
     --build-arg "TOOL_VERSIONS=${tool_versions}"
+    --build-arg SOURCE_DATE_EPOCH=0
   )
   if [[ -z "${DEV_IMAGES_NO_TAG:-}" ]]; then
     image_build_command+=(-t "${DEV_BASE_TAG:?DEV_BASE_TAG is required}")
@@ -83,6 +84,21 @@ compose_development_base_build_command() {
 run_development_base_build() {
   compose_development_base_build_command
   "${image_build_command[@]}"
+}
+
+# The docker exporter's unpack option conflicts with rewrite-timestamp, so a
+# loaded image is produced by exporting a tarball and loading that tarball.
+# Directory entries created by COPY --link otherwise take the build clock as
+# their timestamp, and every tool layer digest changes on the next build.
+load_rewritten_image() {
+  local tar_path
+  tar_path=$(mktemp --suffix=-dev-base.tar)
+  # shellcheck disable=SC2064
+  trap 'rm -f "$tar_path"' RETURN
+  DEV_IMAGES_BUILD_FLAGS="${DEV_IMAGES_BUILD_FLAGS:-} --output type=docker,dest=${tar_path},rewrite-timestamp=true"
+  export DEV_IMAGES_BUILD_FLAGS
+  run_development_base_build
+  docker load --input "$tar_path" >&2
 }
 
 require_buildx() {
@@ -114,12 +130,11 @@ continuous_integration_build() {
   if [[ "$NO_CACHE" == true ]]; then
     flags+=(--no-cache)
   fi
-  flags+=(--output=type=docker)
   export DEV_IMAGES_BUILD_FLAGS="${flags[*]}"
   export DEV_BASE_TAG=dev-images-ci-base:smoke
   unset DEV_IMAGES_NO_TAG
   printf 'load %s for %s\n' "$DEV_BASE_TAG" "$IMAGE" >&2
-  run_development_base_build
+  load_rewritten_image
   if ! docker image inspect "$DEV_BASE_TAG" >/dev/null 2>&1; then
     printf 'build did not load %s\n' "$DEV_BASE_TAG" >&2
     exit 1
@@ -130,14 +145,14 @@ continuous_integration_build() {
 
 local_build() {
   local tag=$1 platform=$2
-  local -a flags=(--pull --provenance=false --sbom=false --load)
+  local -a flags=(--pull --provenance=false --sbom=false)
   if [[ -n "$platform" ]]; then
     flags+=(--platform "$platform")
   fi
   export DEV_IMAGES_BUILD_FLAGS="${flags[*]}"
   export DEV_BASE_TAG=$tag
   unset DEV_IMAGES_NO_TAG
-  run_development_base_build
+  load_rewritten_image
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then

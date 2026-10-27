@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Push the image build_image.sh loaded, by digest, after the smoke test.
-# The second build is the cached result of that load. The pushed config
-# digest has to match the image that was smoked.
+# The second build is the cached result of that load. Both exports rewrite
+# timestamps to the Unix epoch, and the pushed config digest has to match
+# the image that was smoked.
 set -euo pipefail
 
 : "${PLATFORM:?PLATFORM is required}"
@@ -33,7 +34,7 @@ fi
 flags=(--platform "$PLATFORM" --provenance=false --sbom=false)
 metadata_file=${RUNNER_TEMP}/meta-push.json
 flags+=(--metadata-file "$metadata_file")
-flags+=(--output "type=image,name=${IMAGE},push-by-digest=true,name-canonical=true,push=true")
+flags+=(--output "type=image,name=${IMAGE},push-by-digest=true,name-canonical=true,push=true,rewrite-timestamp=true")
 
 export DEV_IMAGES_BUILD_FLAGS="${flags[*]}"
 export DEV_IMAGES_NO_TAG=1

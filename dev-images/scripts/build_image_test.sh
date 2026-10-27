@@ -19,6 +19,8 @@ if grep -F -q 'push-by-digest=true' "$builder"; then
   fail "build script pushes by digest"
 fi
 grep -F -q -- '--provenance=false' "$builder" || fail "provenance flag"
+grep -F -q 'SOURCE_DATE_EPOCH=0' "$builder" || fail "source date epoch"
+grep -F -q 'rewrite-timestamp=true' "$builder" || fail "timestamp rewrite"
 grep -F -q -- '--sbom=false' "$builder" || fail "sbom flag"
 if grep -F -q 'ARCHIVE_URL' "$builder"; then
   fail "build script passes archive URLs"

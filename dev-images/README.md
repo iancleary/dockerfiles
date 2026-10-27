@@ -130,6 +130,11 @@ leaves the tree as it is.
 
 The image build reads recorded URLs and sha256 values
 ([`scripts/install_release_archive.sh`](scripts/install_release_archive.sh)).
+The registry export rewrites layer timestamps to the Unix epoch
+(`SOURCE_DATE_EPOCH=0`). A `COPY --link` layer digest then follows that
+tool's bytes and fixed metadata. A local load uses the same rewrite by
+loading the exported tarball. The docker exporter cannot rewrite timestamps
+and unpack in one step.
 [`scripts/scan_for_personal_data.sh`](scripts/scan_for_personal_data.sh)
 rejects private-source markers in this tree. Workflow runs attest each
 architecture image and the manifest list with
