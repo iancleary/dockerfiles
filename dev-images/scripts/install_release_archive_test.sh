@@ -29,6 +29,8 @@ require_https_archive_url "https://github.com/example/tool/releases/download/1.0
 require_checksum_source "github_release_asset_digest"
 require_checksum_source "upstream_sidecar"
 require_checksum_source "upstream_shared_file:sha256sum.txt"
+require_checksum_source "go_dev_download_index"
+require_checksum_source "ziglang_download_index"
 if (require_checksum_source "mise-versions") >/dev/null 2>&1; then
   fail "unknown checksum source was accepted"
 fi
@@ -72,18 +74,25 @@ version_directory=$root/dev-images/versions
 for version_file in "$version_directory"/*.env; do
   base=$(basename "$version_file")
   [[ "$base" == debian.env ]] && continue
-  version_key=$(grep -E '^[A-Z0-9_]+_VERSION=' "$version_file" | head -n 1 | cut -d= -f1)
-  prefix=${version_key%_VERSION}
-  for suffix in ARCHIVE_URL_AMD64 ARCHIVE_URL_ARM64; do
-    value=$(read_recorded_value "$version_file" "${prefix}_${suffix}")
-    require_https_archive_url "$value" || fail "${base} ${suffix}"
+  if [[ "$base" == development-base-image.env ]]; then
+    parent=$(read_recorded_value "$version_file" DEV_BASE_IMAGE)
+    [[ "$parent" =~ ^ghcr.io/iancleary/dev-base@sha256:[a-f0-9]{64}$ ]] || fail "development base image pin"
+    continue
+  fi
+  mapfile -t prefixes < <(grep -E '^[A-Z0-9_]+_ARCHIVE_URL_AMD64=' "$version_file" | cut -d= -f1 | sed 's/_ARCHIVE_URL_AMD64$//')
+  [[ ${#prefixes[@]} -gt 0 ]] || fail "${base} has no archive"
+  for prefix in "${prefixes[@]}"; do
+    for suffix in ARCHIVE_URL_AMD64 ARCHIVE_URL_ARM64; do
+      value=$(read_recorded_value "$version_file" "${prefix}_${suffix}")
+      require_https_archive_url "$value" || fail "${base} ${prefix} ${suffix}"
+    done
+    for suffix in SHA256_AMD64 SHA256_ARM64; do
+      value=$(read_recorded_value "$version_file" "${prefix}_${suffix}")
+      [[ "$value" =~ ^[a-f0-9]{64}$ ]] || fail "${base} ${prefix} ${suffix}"
+    done
   done
-  for suffix in SHA256_AMD64 SHA256_ARM64; do
-    value=$(read_recorded_value "$version_file" "${prefix}_${suffix}")
-    [[ "$value" =~ ^[a-f0-9]{64}$ ]] || fail "${base} ${suffix}"
-  done
-  require_checksum_source "$(read_recorded_value "$version_file" "${prefix}_CHECKSUM_SOURCE")" \
-    || fail "${base} checksum source"
+  checksum_source=$(grep -E '^[A-Z0-9_]+_CHECKSUM_SOURCE=' "$version_file" | head -n 1 | cut -d= -f2-)
+  require_checksum_source "$checksum_source" || fail "${base} checksum source"
 done
 
 printf 'install release archive tests passed\n'

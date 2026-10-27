@@ -13,6 +13,12 @@ output=$(
     IMAGE_VERSION=2026.10.24.01 \
     GITHUB_SHA=$sha \
     DIGEST_base=$digest \
+    DIGEST_go=$digest \
+    DIGEST_rust=$digest \
+    DIGEST_node=$digest \
+    DIGEST_python=$digest \
+    DIGEST_zig=$digest \
+    DIGEST_bun=$digest \
     bash "$publish"
 )
 expected=$(
@@ -22,6 +28,36 @@ ghcr.io/iancleary/dev-base:2026.10.24.01
 -t
 ghcr.io/iancleary/dev-base:latest
 ghcr.io/iancleary/dev-base@${digest}
+-t
+ghcr.io/iancleary/dev-go:2026.10.24.01
+-t
+ghcr.io/iancleary/dev-go:latest
+ghcr.io/iancleary/dev-go@${digest}
+-t
+ghcr.io/iancleary/dev-rust:2026.10.24.01
+-t
+ghcr.io/iancleary/dev-rust:latest
+ghcr.io/iancleary/dev-rust@${digest}
+-t
+ghcr.io/iancleary/dev-node:2026.10.24.01
+-t
+ghcr.io/iancleary/dev-node:latest
+ghcr.io/iancleary/dev-node@${digest}
+-t
+ghcr.io/iancleary/dev-python:2026.10.24.01
+-t
+ghcr.io/iancleary/dev-python:latest
+ghcr.io/iancleary/dev-python@${digest}
+-t
+ghcr.io/iancleary/dev-zig:2026.10.24.01
+-t
+ghcr.io/iancleary/dev-zig:latest
+ghcr.io/iancleary/dev-zig@${digest}
+-t
+ghcr.io/iancleary/dev-bun:2026.10.24.01
+-t
+ghcr.io/iancleary/dev-bun:latest
+ghcr.io/iancleary/dev-bun@${digest}
 git_tag=dev-images-2026.10.24.01
 EOF
 )

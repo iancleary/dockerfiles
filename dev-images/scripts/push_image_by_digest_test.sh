@@ -13,7 +13,7 @@ fail() {
 grep -F -q 'push-by-digest=true' "$push" || fail "digest push flag"
 grep -F -q 'rewrite-timestamp=true' "$push" || fail "timestamp rewrite"
 grep -F -q 'push=true' "$push" || fail "push flag"
-grep -F -q 'dev-images-ci-base:smoke' "$push" || fail "smoked tag"
+grep -F -q 'continuous_integration_local_tag' "$push" || fail "smoked tag"
 grep -F -q 'remote_config' "$push" || fail "config digest comparison"
 grep -F -q 'local_id' "$push" || fail "smoked image id"
 grep -F -q 'dev-images-smoked-config' "$push" || fail "smoked config digest"

@@ -6,8 +6,9 @@ name: Dev images pinned version update
 # push does not start other workflows; the publish job dispatches Publish
 # dev images with publish=release, which skips the age and change gates.
 #
-# Verify builds dev-base on both architectures, smoke-tests it, and does
-# not push. A failed verify commits nothing. Toolchains are not updated.
+# Verify builds every development image on both architectures, smoke-tests
+# them, and does not push. A failed verify commits nothing. Toolchains use
+# latest_stable, and Node uses the newest LTS line.
 
 on:
   schedule:
@@ -24,7 +25,7 @@ concurrency:
 jobs:
   update:
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 120
     permissions:
       contents: read
     outputs:
@@ -32,6 +33,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install minisign
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends minisign
 
       - name: Update pinned version files
         id: update
@@ -81,7 +85,7 @@ jobs:
           - runner: ubuntu-24.04-arm
             arch: arm64
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 120
+    timeout-minutes: 180
     permissions:
       contents: read
     steps:
@@ -108,7 +112,7 @@ jobs:
       - name: Install just
         run: bash openshell/scripts/install-just.sh
 
-      - name: Build and smoke-test dev-base (${{ matrix.arch }})
+      - name: Build and smoke-test development images (${{ matrix.arch }})
         run: just dev-images::all
 
   publish:

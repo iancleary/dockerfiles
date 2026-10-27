@@ -3,8 +3,8 @@
 #
 # Policy is latest_stable: the newest stable release across minor and major
 # versions. Prerelease tags are skipped. A downgrade is refused.
-# Toolchains are not tracked. Node, Go, Rust, and Python stay out of this
-# image until a later phase.
+# Go, Rust, Python, Zig, Bun, and pnpm use latest_stable. Node uses the newest
+# LTS line from the Node.js index. That line is also a stable release.
 #
 # Archive URLs and sha256 values are recorded from the release. Two published
 # checksums that disagree fail the run. GitHub artifact attestations are
@@ -133,6 +133,194 @@ update_github_release_tool() {
     "$amd64_url" "$arm64_url" "$amd64_sha" "$arm64_sha" "$checksum_source"
 }
 
+assign_recorded_value() {
+  local version_file=$1 key=$2 value=$3
+  if [[ "$(kv "$version_file" "$key")" != "$value" ]]; then
+    recorded_value_changed=true
+  fi
+  set_kv "$version_file" "$key" "$value"
+}
+
+channel_manifest_field() {
+  local file=$1 section=$2 key=$3
+  awk -v section="$section" -v key="$key" '
+    $0 == "[" section "]" { grab = 1; next }
+    grab && /^\[/ { exit }
+    grab && $1 == key {
+      if (match($0, /"[^"]+"/)) {
+        print substr($0, RSTART + 1, RLENGTH - 2)
+      } else if (match($0, /[0-9a-f]{64}/)) {
+        print substr($0, RSTART, RLENGTH)
+      }
+      exit
+    }
+  ' "$file"
+}
+
+update_go_toolchain() {
+  local version_file=$work/versions/go.env current_version chosen_version json
+  local amd64_sha arm64_sha amd64_url arm64_url filename
+  local -a versions=()
+  current_version=$(kv "$version_file" GO_VERSION)
+  json=$(curl_public "https://go.dev/dl/?mode=json&include=all") || die "go.dev index failed"
+  require_array "$json" "go.dev"
+  mapfile -t versions < <(jq -r '.[] | select(.stable == true) | .version' <<<"$json" | sed -n 's/^go\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)$/\1/p')
+  chosen_version=$(choose_latest_stable_version go "$current_version" "${versions[@]}")
+  printf 'resolve go %s\n' "$chosen_version" >&2
+  filename="go${chosen_version}.linux-amd64.tar.gz"
+  amd64_sha=$(jq -r --arg version "go${chosen_version}" --arg filename "$filename" '
+    .[] | select(.version == $version) | .files[] | select(.filename == $filename) | .sha256
+  ' <<<"$json")
+  filename="go${chosen_version}.linux-arm64.tar.gz"
+  arm64_sha=$(jq -r --arg version "go${chosen_version}" --arg filename "$filename" '
+    .[] | select(.version == $version) | .files[] | select(.filename == $filename) | .sha256
+  ' <<<"$json")
+  [[ "$amd64_sha" =~ ^[a-f0-9]{64}$ && "$arm64_sha" =~ ^[a-f0-9]{64}$ ]] || die "go.dev sha256 missing"
+  amd64_url="https://go.dev/dl/go${chosen_version}.linux-amd64.tar.gz"
+  arm64_url="https://go.dev/dl/go${chosen_version}.linux-arm64.tar.gz"
+  download_verify "$amd64_url" "$amd64_sha" "go amd64"
+  download_verify "$arm64_url" "$arm64_sha" "go arm64"
+  record_tool go "$version_file" GO "$current_version" "$chosen_version" \
+    "$amd64_url" "$arm64_url" "$amd64_sha" "$arm64_sha" go_dev_download_index
+}
+
+update_node_toolchain() {
+  local version_file=$work/versions/node.env current_version chosen_version json sums_path
+  local amd64_sha arm64_sha amd64_name arm64_name amd64_url arm64_url
+  local -a versions=()
+  current_version=$(kv "$version_file" NODE_VERSION)
+  json=$(curl_public "https://nodejs.org/dist/index.json") || die "nodejs index failed"
+  require_array "$json" "nodejs"
+  mapfile -t versions < <(jq -r '.[] | select(.lts != false) | .version' <<<"$json" | sed -n 's/^v\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)$/\1/p')
+  chosen_version=$(choose_latest_stable_version node "$current_version" "${versions[@]}")
+  printf 'resolve node %s\n' "$chosen_version" >&2
+  sums_path=$(download_to_cache "https://nodejs.org/dist/v${chosen_version}/SHASUMS256.txt" "node ${chosen_version} SHASUMS256.txt")
+  amd64_name="node-v${chosen_version}-linux-x64.tar.xz"
+  arm64_name="node-v${chosen_version}-linux-arm64.tar.xz"
+  amd64_sha=$(awk -v name="$amd64_name" '$2 == name { print $1; exit }' "$sums_path")
+  arm64_sha=$(awk -v name="$arm64_name" '$2 == name { print $1; exit }' "$sums_path")
+  [[ "$amd64_sha" =~ ^[a-f0-9]{64}$ && "$arm64_sha" =~ ^[a-f0-9]{64}$ ]] || die "node SHASUMS256 missing"
+  amd64_url="https://nodejs.org/dist/v${chosen_version}/${amd64_name}"
+  arm64_url="https://nodejs.org/dist/v${chosen_version}/${arm64_name}"
+  download_verify "$amd64_url" "$amd64_sha" "node amd64"
+  download_verify "$arm64_url" "$arm64_sha" "node arm64"
+  record_tool node "$version_file" NODE "$current_version" "$chosen_version" \
+    "$amd64_url" "$arm64_url" "$amd64_sha" "$arm64_sha" "upstream_shared_file:SHASUMS256.txt"
+}
+
+update_python_toolchain() {
+  local version_file=$work/versions/python.env current_version chosen_version standalone_tag
+  local amd64_asset arm64_asset amd64_sha arm64_sha amd64_url arm64_url
+  local -a versions=()
+  current_version=$(kv "$version_file" PYTHON_VERSION)
+  capture_lines versions list_release_versions python/cpython '^v([0-9]+\.[0-9]+\.[0-9]+)$'
+  chosen_version=$(choose_latest_stable_version python "$current_version" "${versions[@]}")
+  printf 'resolve python %s\n' "$chosen_version" >&2
+  standalone_tag=$(python_standalone_tag "$chosen_version")
+  [[ "$standalone_tag" =~ ^[0-9]{8}$ ]] || die "bad python-build-standalone tag ${standalone_tag}"
+  amd64_asset="cpython-${chosen_version}+${standalone_tag}-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz"
+  arm64_asset="cpython-${chosen_version}+${standalone_tag}-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz"
+  amd64_sha=$(resolve_archive_sha astral-sh/python-build-standalone "$standalone_tag" "$amd64_asset" shared SHA256SUMS "python amd64")
+  arm64_sha=$(resolve_archive_sha astral-sh/python-build-standalone "$standalone_tag" "$arm64_asset" shared SHA256SUMS "python arm64")
+  amd64_url=$(release_asset_url astral-sh/python-build-standalone "$standalone_tag" "$amd64_asset")
+  arm64_url=$(release_asset_url astral-sh/python-build-standalone "$standalone_tag" "$arm64_asset")
+  recorded_value_changed=false
+  assign_recorded_value "$version_file" PYTHON_STANDALONE_TAG "$standalone_tag"
+  record_tool python "$version_file" PYTHON "$current_version" "$chosen_version" \
+    "$amd64_url" "$arm64_url" "$amd64_sha" "$arm64_sha" "upstream_shared_file:SHA256SUMS"
+  if [[ "$recorded_value_changed" == true && "$current_version" == "$chosen_version" ]]; then
+    note "update python ${chosen_version} standalone tag"
+  fi
+}
+
+update_rust_toolchain() {
+  local version_file=$work/versions/rust.env current_version chosen_version toml_path checksum_source
+  local -a versions=()
+  current_version=$(kv "$version_file" RUST_VERSION)
+  capture_lines versions list_release_versions rust-lang/rust '^([0-9]+\.[0-9]+\.[0-9]+)$'
+  chosen_version=$(choose_latest_stable_version rust "$current_version" "${versions[@]}")
+  printf 'resolve rust %s\n' "$chosen_version" >&2
+  toml_path=$(download_to_cache "https://static.rust-lang.org/dist/channel-rust-${chosen_version}.toml" "channel-rust-${chosen_version}.toml")
+  verify_rust_channel "$chosen_version" "$toml_path"
+  checksum_source="upstream_shared_file:channel-rust-${chosen_version}.toml"
+  recorded_value_changed=false
+  assign_recorded_value "$version_file" RUST_VERSION "$chosen_version"
+  assign_recorded_value "$version_file" RUST_CHECKSUM_SOURCE "$checksum_source"
+  record_rust_component "$version_file" "$toml_path" RUSTC rustc
+  record_rust_component "$version_file" "$toml_path" CARGO cargo
+  record_rust_component "$version_file" "$toml_path" RUST_STD rust-std
+  record_rust_component "$version_file" "$toml_path" RUSTFMT rustfmt-preview
+  record_rust_component "$version_file" "$toml_path" CLIPPY clippy-preview
+  if [[ "$current_version" != "$chosen_version" ]]; then
+    note "update rust ${current_version} -> ${chosen_version}"
+  elif [[ "$recorded_value_changed" == true ]]; then
+    note "update rust ${chosen_version} recorded archive"
+  else
+    printf 'rust %s unchanged\n' "$chosen_version" >&2
+  fi
+}
+
+record_rust_component() {
+  local version_file=$1 toml_path=$2 key_prefix=$3 component=$4
+  local triple field amd64_url arm64_url amd64_sha arm64_sha
+  triple=x86_64-unknown-linux-gnu
+  field="pkg.${component}.target.${triple}"
+  amd64_url=$(channel_manifest_field "$toml_path" "$field" xz_url)
+  amd64_sha=$(channel_manifest_field "$toml_path" "$field" xz_hash)
+  triple=aarch64-unknown-linux-gnu
+  field="pkg.${component}.target.${triple}"
+  arm64_url=$(channel_manifest_field "$toml_path" "$field" xz_url)
+  arm64_sha=$(channel_manifest_field "$toml_path" "$field" xz_hash)
+  [[ "$amd64_url" == https://* && "$arm64_url" == https://* ]] || die "rust ${component} url missing"
+  [[ "$amd64_sha" =~ ^[a-f0-9]{64}$ && "$arm64_sha" =~ ^[a-f0-9]{64}$ ]] || die "rust ${component} sha256 missing"
+  download_verify "$amd64_url" "$amd64_sha" "rust ${component} amd64"
+  download_verify "$arm64_url" "$arm64_sha" "rust ${component} arm64"
+  assign_recorded_value "$version_file" "${key_prefix}_ARCHIVE_URL_AMD64" "$amd64_url"
+  assign_recorded_value "$version_file" "${key_prefix}_ARCHIVE_URL_ARM64" "$arm64_url"
+  assign_recorded_value "$version_file" "${key_prefix}_SHA256_AMD64" "$amd64_sha"
+  assign_recorded_value "$version_file" "${key_prefix}_SHA256_ARM64" "$arm64_sha"
+}
+
+update_zig_toolchain() {
+  local version_file=$work/versions/zig.env current_version chosen_version json public_key
+  local amd64_url arm64_url amd64_sha arm64_sha amd64_signature arm64_signature
+  local amd64_path arm64_path amd64_signature_path arm64_signature_path
+  local -a versions=()
+  current_version=$(kv "$version_file" ZIG_VERSION)
+  public_key=$(kv "$version_file" ZIG_MINISIGN_PUBLIC_KEY)
+  command -v minisign >/dev/null 2>&1 || die "minisign is required to verify Zig"
+  json=$(curl_public "https://ziglang.org/download/index.json") || die "zig index failed"
+  mapfile -t versions < <(jq -r 'keys[]' <<<"$json" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' || true)
+  chosen_version=$(choose_latest_stable_version zig "$current_version" "${versions[@]}")
+  printf 'resolve zig %s\n' "$chosen_version" >&2
+  amd64_url=$(jq -r --arg version "$chosen_version" '.[$version]["x86_64-linux"].tarball' <<<"$json")
+  arm64_url=$(jq -r --arg version "$chosen_version" '.[$version]["aarch64-linux"].tarball' <<<"$json")
+  amd64_sha=$(jq -r --arg version "$chosen_version" '.[$version]["x86_64-linux"].shasum' <<<"$json")
+  arm64_sha=$(jq -r --arg version "$chosen_version" '.[$version]["aarch64-linux"].shasum' <<<"$json")
+  [[ "$amd64_url" == https://* && "$arm64_url" == https://* ]] || die "zig tarball url missing"
+  [[ "$amd64_sha" =~ ^[a-f0-9]{64}$ && "$arm64_sha" =~ ^[a-f0-9]{64}$ ]] || die "zig shasum missing"
+  amd64_signature="${amd64_url}.minisig"
+  arm64_signature="${arm64_url}.minisig"
+  amd64_path=$(download_to_cache "$amd64_url" "zig amd64")
+  arm64_path=$(download_to_cache "$arm64_url" "zig arm64")
+  verify_sha256_file "$amd64_path" "$amd64_sha" "zig amd64"
+  verify_sha256_file "$arm64_path" "$arm64_sha" "zig arm64"
+  amd64_signature_path=$(download_to_cache "$amd64_signature" "zig amd64 signature")
+  arm64_signature_path=$(download_to_cache "$arm64_signature" "zig arm64 signature")
+  minisign -V -P "$public_key" -m "$amd64_path" -x "$amd64_signature_path" >/dev/null \
+    || die "zig amd64 minisign verification failed"
+  minisign -V -P "$public_key" -m "$arm64_path" -x "$arm64_signature_path" >/dev/null \
+    || die "zig arm64 minisign verification failed"
+  recorded_value_changed=false
+  assign_recorded_value "$version_file" ZIG_SIGNATURE_URL_AMD64 "$amd64_signature"
+  assign_recorded_value "$version_file" ZIG_SIGNATURE_URL_ARM64 "$arm64_signature"
+  record_tool zig "$version_file" ZIG "$current_version" "$chosen_version" \
+    "$amd64_url" "$arm64_url" "$amd64_sha" "$arm64_sha" ziglang_download_index
+  if [[ "$recorded_value_changed" == true && "$current_version" == "$chosen_version" ]]; then
+    note "update zig ${chosen_version} signature"
+  fi
+}
+
 update_debian_image_digest() {
   local development_version_file=$work/versions/debian.env
   local openshell_version_file=$work/openshell-base.env
@@ -235,6 +423,19 @@ update_pinned_versions() {
     iancleary/ahi v '^v([0-9]+\.[0-9]+\.[0-9]+)$' shared "ahi-VERSIONTOKEN-sha256sums.txt" \
     "ahi-VERSIONTOKEN-linux-x86_64.tar.gz" \
     "ahi-VERSIONTOKEN-linux-aarch64.tar.gz"
+  update_github_release_tool pnpm "$version_directory/pnpm.env" PNPM \
+    pnpm/pnpm v '^v([0-9]+\.[0-9]+\.[0-9]+)$' none "" \
+    pnpm-linux-x64.tar.gz \
+    pnpm-linux-arm64.tar.gz
+  update_github_release_tool bun "$version_directory/bun.env" BUN \
+    oven-sh/bun bun-v '^bun-v([0-9]+\.[0-9]+\.[0-9]+)$' shared SHASUMS256.txt \
+    bun-linux-x64.zip \
+    bun-linux-aarch64.zip
+  update_go_toolchain
+  update_node_toolchain
+  update_python_toolchain
+  update_rust_toolchain
+  update_zig_toolchain
   update_debian_image_digest
 }
 

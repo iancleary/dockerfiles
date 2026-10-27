@@ -164,7 +164,7 @@ architecture_key_suffix() {
 require_checksum_source() {
   local checksum_source=$1
   case "$checksum_source" in
-    github_release_asset_digest | upstream_sidecar | upstream_shared_file:*)
+    github_release_asset_digest | upstream_sidecar | upstream_shared_file:* | go_dev_download_index | ziglang_download_index)
       ;;
     *)
       printf 'recorded checksum source is not recognized: %s\n' "$checksum_source" >&2
