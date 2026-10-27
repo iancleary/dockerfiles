@@ -53,9 +53,14 @@ for recipe in go rust node python zig bun; do
   language_dockerfile=$root/dev-images/$recipe/Dockerfile
   [[ -f "$language_dockerfile" ]] || fail "missing $recipe dockerfile"
   grep -F -q 'FROM development-base' "$language_dockerfile" || fail "$recipe parent"
-  grep -F -q 'COPY --link' "$language_dockerfile" || fail "$recipe link"
 done
+for recipe in go rust node zig bun; do
+  grep -F -q 'COPY --link' "$root/dev-images/$recipe/Dockerfile" || fail "$recipe link"
+done
+grep -F -q 'uv python install' "$root/dev-images/python/Dockerfile" || fail "python uv install"
+grep -F -q 'UV_PYTHON_INSTALL_DIR=/opt/python' "$root/dev-images/python/Dockerfile" || fail "python install directory"
 grep -F -q 'development-base=docker-image://' "$builder" || fail "parent build context"
+grep -F -q 'development-base=oci-layout://' "$builder" || fail "parent layout context"
 
 grep -E -q '^permissions:$' "$workflow" || fail "workflow permissions"
 grep -F -q 'contents: read' "$workflow" || fail "contents read"

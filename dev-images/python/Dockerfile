@@ -1,31 +1,18 @@
 # syntax=docker/dockerfile:1
-# dev-python adds one CPython tree on dev-base. The bytes are the
-# python-build-standalone install_only_stripped archive. uv is already in
-# dev-base and is not installed again.
-
-ARG DEBIAN_IMAGE
-# hadolint ignore=DL3006
-FROM ${DEBIAN_IMAGE} AS archive_tools
-# hadolint ignore=DL3008
-RUN DEBIAN_FRONTEND=noninteractive apt-get update \
- && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-      ca-certificates \
-      curl \
-      tar \
- && rm -rf /var/lib/apt/lists/*
-
-FROM archive_tools AS toolchain
-COPY versions/python.env /tool/python.env
-COPY scripts/install_release_archive.sh /tool/install_release_archive.sh
-COPY scripts/install_toolchain_tree.sh /tool/install_toolchain_tree.sh
-COPY scripts/install_python_toolchain.sh /tool/install_python_toolchain.sh
-RUN bash /tool/install_python_toolchain.sh && rm -rf /tool
+# dev-python runs `uv python install` with the uv already in dev-base.
+# versions/python.env supplies the exact archive and sha256. uv checks that
+# sha256. The interpreter is one layer at /opt/python, owned by developer.
 
 # hadolint ignore=DL3006
 FROM development-base AS dev_python
-COPY --link --from=toolchain /out/usr/local/ /usr/local/
+USER root
+RUN --mount=type=bind,source=.,target=/src,ro \
+    PYTHON_VERSION_FILE=/src/versions/python.env \
+    bash /src/scripts/install_python_with_uv.sh
 
-ENV PYTHONDONTWRITEBYTECODE=1 \
+ENV UV_PYTHON_INSTALL_DIR=/opt/python \
+    PATH="/opt/python/bin:${PATH}" \
+    PYTHONDONTWRITEBYTECODE=1 \
     PYTHONPYCACHEPREFIX=/tmp/python-cache
 
 # hadolint ignore=DL3066

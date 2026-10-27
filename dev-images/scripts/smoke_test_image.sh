@@ -259,6 +259,12 @@ case "$recipe" in
     assert_development_base_commands
     expect_version PYTHON_VERSION "$versions_directory/python.env" python3 --version
     expect_version PYTHON_VERSION "$versions_directory/python.env" python --version
+    owner=$(run_command stat -c %U /opt/python)
+    owner=${owner//[[:space:]]/}
+    if [[ "$owner" != "developer" ]]; then
+      printf 'python install directory is owned by %s, want developer\n' "$owner" >&2
+      exit 1
+    fi
     ;;
   zig)
     assert_development_base_commands

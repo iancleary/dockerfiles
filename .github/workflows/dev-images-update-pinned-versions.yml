@@ -107,11 +107,7 @@ jobs:
           git apply version-out/version.patch
 
       - name: Set up Buildx
-        # The docker driver shares the engine image store, so each language
-        # image can use the local dev-base tag. The container driver cannot.
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-        with:
-          driver: docker
 
       - name: Install just
         run: bash openshell/scripts/install-just.sh

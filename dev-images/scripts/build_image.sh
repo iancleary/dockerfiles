@@ -4,6 +4,9 @@
 # integration loads dev-images-ci-<recipe>:smoke and does not push.
 # The push script publishes that loaded image by digest after the smoke test.
 # A language image uses the named build context development-base.
+# A registry parent is a docker-image context. A local tag on the container
+# driver is saved to an OCI layout, because that driver cannot see the engine
+# image store. The docker driver can read the local tag directly.
 set -euo pipefail
 
 script_directory=$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
@@ -11,6 +14,7 @@ repository_root=$(cd -P -- "$script_directory/../.." && pwd -P)
 versions_directory=$repository_root/dev-images/versions
 dockerfile=$repository_root/dev-images/base/Dockerfile
 build_context=$repository_root/dev-images
+parent_layout_directory=
 
 read_recorded_value() {
   local version_file=$1 key=$2 line
@@ -52,6 +56,51 @@ resolve_parent_image() {
     exit 1
   fi
   printf '%s\n' "$parent"
+}
+
+current_buildx_driver() {
+  local driver
+  driver=$(docker buildx inspect 2>/dev/null | awk '/^Driver:/ { print $2; exit }')
+  if [[ -z "$driver" ]]; then
+    printf 'docker\n'
+  else
+    printf '%s\n' "$driver"
+  fi
+}
+
+remove_parent_layout() {
+  if [[ -n "$parent_layout_directory" ]]; then
+    rm -rf "$parent_layout_directory"
+    parent_layout_directory=
+    parent_layout_path=
+  fi
+}
+
+prepare_local_parent_layout() {
+  local parent=$1 archive
+  remove_parent_layout
+  parent_layout_directory=$(mktemp -d)
+  archive=$parent_layout_directory/image.tar
+  parent_layout_path=$parent_layout_directory/layout
+  mkdir -p "$parent_layout_path"
+  docker save "$parent" -o "$archive"
+  python3 "$script_directory/prepare_parent_image_layout.py" "$archive" "$parent_layout_path"
+  rm -f "$archive"
+}
+
+parent_build_context() {
+  local parent=$1 driver
+  if [[ "$parent" == */* ]]; then
+    parent_context_value="development-base=docker-image://${parent}"
+    return
+  fi
+  driver=$(current_buildx_driver)
+  if [[ "$driver" == "docker-container" ]]; then
+    prepare_local_parent_layout "$parent"
+    parent_context_value="development-base=oci-layout://${parent_layout_path}"
+    return
+  fi
+  parent_context_value="development-base=docker-image://${parent}"
 }
 
 compose_image_build_command() {
@@ -117,7 +166,8 @@ compose_image_build_command() {
     image_build_command+=("${extra[@]}")
   fi
   if [[ "$recipe" != base ]]; then
-    image_build_command+=(--build-context "development-base=docker-image://${parent}")
+    parent_build_context "$parent"
+    image_build_command+=(--build-context "$parent_context_value")
   fi
   image_build_command+=(
     --build-arg "DEBIAN_IMAGE=${debian_image}"
@@ -179,6 +229,7 @@ load_rewritten_image() {
     docker load --input "$tar_path" >&2 || status=$?
   fi
   rm -f "$tar_path"
+  remove_parent_layout
   return "$status"
 }
 

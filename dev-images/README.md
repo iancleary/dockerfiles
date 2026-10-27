@@ -17,7 +17,7 @@ Each image is `linux/amd64` and `linux/arm64`.
 | `ghcr.io/iancleary/dev-go` | [`go/Dockerfile`](go/Dockerfile) | `dev-base` | Go toolchain |
 | `ghcr.io/iancleary/dev-rust` | [`rust/Dockerfile`](rust/Dockerfile) | `dev-base` | rustc, cargo, rustfmt, clippy, and gcc |
 | `ghcr.io/iancleary/dev-node` | [`node/Dockerfile`](node/Dockerfile) | `dev-base` | Node.js LTS, npm, and pnpm |
-| `ghcr.io/iancleary/dev-python` | [`python/Dockerfile`](python/Dockerfile) | `dev-base` | CPython from python-build-standalone |
+| `ghcr.io/iancleary/dev-python` | [`python/Dockerfile`](python/Dockerfile) | `dev-base` | CPython from `uv python install` |
 | `ghcr.io/iancleary/dev-zig` | [`zig/Dockerfile`](zig/Dockerfile) | `dev-base` | Zig toolchain |
 | `ghcr.io/iancleary/dev-bun` | [`bun/Dockerfile`](bun/Dockerfile) | `dev-base` | Bun. Node.js is not installed |
 
@@ -37,10 +37,12 @@ dev-base layers are pulled again only when the parent digest changes.
 `dev-bun` does not contain Node, and `dev-node` does not install Bun or
 corepack.
 
-A local build and the pull-request workflow use the Buildx docker driver,
-which can read the `dev-base` image just loaded on that machine. The
-container driver used to push an image cannot see a local tag, so the
-publish job passes the digest from the dev-base job in the same run.
+Publish passes the digest from the dev-base job in the same run. A local
+tag is a `docker-image` context on the docker driver. The container driver,
+which the pull-request and publish jobs use, cannot see that tag, so the
+build saves it and passes an OCI layout. `dev-python` is the exception to
+the linked-archive layer: its one new layer is `uv python install` of the
+recorded archive.
 
 [`versions/debian.env`](versions/debian.env) is the dev-base Debian pin. The Monday
 pinned-version update writes that same bookworm-slim digest into this file
@@ -83,11 +85,12 @@ Not in `dev-base`: Node, Go, Rust, CPython, Zig, Bun, Claude, Codex, Nix,
 Neovim, mise, age, sops, and powerlevel10k. Those language toolchains are
 the separate images above. `dev-go` sets `CGO_ENABLED=0` and
 `GOTOOLCHAIN=local`. `dev-rust` has no rustup and no personal cargo
-configuration; `CARGO_HOME` is `/tmp/cargo`. `dev-python` installs the
-recorded python-build-standalone archive to `/usr/local/python`, owned by
-root and executable by `developer`. uv is already in `dev-base` and is the
-project installer; the interpreter itself is not an unrecorded `uv python
-install`. `dev-node` removes corepack and sets `COREPACK_ENABLE_NETWORK=0`.
+configuration; `CARGO_HOME` is `/tmp/cargo`. `dev-python` runs
+`uv python install 3.15.2` with the uv already in `dev-base`. The install
+directory is `/opt/python` (`UV_PYTHON_INSTALL_DIR`), owned by `developer`.
+The version file records one python-build-standalone archive and its sha256.
+The build gives uv a downloads JSON containing that archive, and uv checks
+the sha256. `dev-node` removes corepack and sets `COREPACK_ENABLE_NETWORK=0`.
 
 ## Version files
 
