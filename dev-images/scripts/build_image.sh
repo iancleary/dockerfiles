@@ -90,15 +90,34 @@ run_development_base_build() {
 # loaded image is produced by exporting a tarball and loading that tarball.
 # Directory entries created by COPY --link otherwise take the build clock as
 # their timestamp, and every tool layer digest changes on the next build.
+record_smoked_config_digest() {
+  local tar_path=$1 config_name config_digest
+  if [[ -z "${RUNNER_TEMP:-}" ]]; then
+    return 0
+  fi
+  config_name=$(python3 -c 'import json,sys; print(json.load(sys.stdin)[0]["Config"])' < <(tar -xOf "$tar_path" manifest.json))
+  config_digest=$(tar -xOf "$tar_path" "$config_name" | sha256sum | awk '{print $1}')
+  if [[ ! "$config_digest" =~ ^[a-f0-9]{64}$ ]]; then
+    printf 'smoked image config digest was not sha256\n' >&2
+    return 1
+  fi
+  printf 'sha256:%s\n' "$config_digest" >"${RUNNER_TEMP}/dev-images-smoked-config"
+}
+
 load_rewritten_image() {
-  local tar_path
+  local tar_path status=0
   tar_path=$(mktemp --suffix=-dev-base.tar)
-  # shellcheck disable=SC2064
-  trap 'rm -f "$tar_path"' RETURN
   DEV_IMAGES_BUILD_FLAGS="${DEV_IMAGES_BUILD_FLAGS:-} --output type=docker,dest=${tar_path},rewrite-timestamp=true"
   export DEV_IMAGES_BUILD_FLAGS
-  run_development_base_build
-  docker load --input "$tar_path" >&2
+  run_development_base_build || status=$?
+  if [[ "$status" -eq 0 ]]; then
+    record_smoked_config_digest "$tar_path" || status=$?
+  fi
+  if [[ "$status" -eq 0 ]]; then
+    docker load --input "$tar_path" >&2 || status=$?
+  fi
+  rm -f "$tar_path"
+  return "$status"
 }
 
 require_buildx() {

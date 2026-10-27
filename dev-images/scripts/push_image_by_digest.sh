@@ -25,7 +25,13 @@ if ! docker image inspect "$local_tag" >/dev/null 2>&1; then
   printf 'smoked image %s is not loaded\n' "$local_tag" >&2
   exit 1
 fi
-local_id=$(docker image inspect --format '{{.Id}}' "$local_tag")
+# docker image inspect reports the manifest digest when the containerd image
+# store is in use. The registry comparison uses the image config blob.
+if [[ -f "${RUNNER_TEMP}/dev-images-smoked-config" ]]; then
+  local_id=$(tr -d '[:space:]' <"${RUNNER_TEMP}/dev-images-smoked-config")
+else
+  local_id=$(docker image inspect --format '{{.Id}}' "$local_tag")
+fi
 if [[ ! "$local_id" =~ ^sha256:[a-f0-9]{64}$ ]]; then
   printf 'smoked image id is not a digest: %s\n' "$local_id" >&2
   exit 1
