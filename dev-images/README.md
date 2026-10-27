@@ -15,9 +15,10 @@ configuration. Those are mounted by the consumer when a container starts.
 | --- | --- | --- | --- |
 | `ghcr.io/iancleary/dev-base` | [`base/Dockerfile`](base/Dockerfile) | `debian:bookworm-slim` from [`versions/debian.env`](versions/debian.env) | apt packages, user `developer` uid 1000, one linked layer per pinned tool |
 
-The Debian digest starts equal to [`openshell/versions/base.env`](../openshell/versions/base.env).
-The weekly update rewrites `versions/debian.env` when the bookworm-slim
-index changes. It does not rewrite the OpenShell pin.
+[`versions/debian.env`](versions/debian.env) is the dev-base Debian pin. The Monday
+pinned-version update writes that same bookworm-slim digest into this file
+and [`openshell/versions/base.env`](../openshell/versions/base.env) in one commit.
+It does not select a different Debian release.
 
 Apt packages, installed on every release build and not version-pinned:
 `ca-certificates`, `direnv`, `git`, `git-lfs`, `openssh-client`, `tmux`,

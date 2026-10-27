@@ -57,4 +57,16 @@ grep -F -q 'smoke-base' "$justfile" || fail "just smoke recipe"
 grep -F -q 'all: smoke-base' "$justfile" || fail "just all recipe"
 grep -F -q 'mod dev-images' "$root/justfile" || fail "root module"
 
+pull_request_workflow=$root/.github/workflows/dev-images-verify-pull-request.yml
+[[ -f "$pull_request_workflow" ]] || fail "missing pull request workflow"
+grep -q '^  pull_request:' "$pull_request_workflow" || fail "pull request trigger"
+grep -F -q '"dev-images/**"' "$pull_request_workflow" || fail "pull request path filter"
+grep -F -q 'ubuntu-24.04-arm' "$pull_request_workflow" || fail "arm64 runner"
+grep -F -q 'bash dev-images/scripts/build_image.sh' "$pull_request_workflow" || fail "pull request build"
+grep -F -q 'bash dev-images/scripts/smoke_test_image.sh' "$pull_request_workflow" || fail "pull request smoke"
+grep -F -q 'contents: read' "$pull_request_workflow" || fail "pull request permissions"
+if grep -E -n 'packages:|id-token:|attestations:|docker/login-action|attest-build-provenance|cosign |push_image_by_digest|publish_release' "$pull_request_workflow"; then
+  fail "pull request workflow publishes or signs"
+fi
+
 printf 'build image contract passed\n'

@@ -1,0 +1,60 @@
+name: Verify dev-base pull request
+
+# A pull request that changes the development image or its workflows builds
+# dev-base on native amd64 and arm64 runners and smoke-tests the loaded image.
+# This workflow does not log in, does not push, and does not create a release.
+
+on:
+  pull_request:
+    paths:
+      - "dev-images/**"
+      - ".github/workflows/dev-images-publish.yml"
+      - ".github/workflows/dev-images-build-single-image.yml"
+      - ".github/workflows/dev-images-update-pinned-versions.yml"
+      - ".github/workflows/dev-images-verify-pull-request.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dev-images-verify-pull-request-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: dev-base (${{ matrix.platform }})
+    permissions:
+      contents: read
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-24.04
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build image
+        id: build
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          IMAGE: ghcr.io/iancleary/dev-base
+          RECIPE: base
+          NO_CACHE: false
+          DEV_IMAGES_GIT_SHA: ${{ github.sha }}
+          DEV_IMAGES_IMAGE_VERSION: pull-request
+        run: bash dev-images/scripts/build_image.sh
+
+      - name: Smoke test
+        if: steps.build.outputs.smoke == 'true'
+        env:
+          LOCAL_TAG: ${{ steps.build.outputs.local_tag }}
+        run: bash dev-images/scripts/smoke_test_image.sh "$LOCAL_TAG"

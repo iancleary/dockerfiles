@@ -47,7 +47,11 @@ done
 
 grep -F -q 'latest_stable' "$updater" || fail "policy name"
 grep -F -q 'versions/debian.env' "$updater" || fail "debian version file"
+grep -F -q 'openshell/versions/base.env' "$updater" || fail "openshell debian pin"
 grep -F -q 'DEBIAN_IMAGE' "$updater" || fail "debian image key"
+if grep -n '^  bump_debian$' "$root/openshell/scripts/bump-versions.sh"; then
+  fail "OpenShell Monday update still writes the Debian digest"
+fi
 
 version_directory=$root/dev-images/versions
 for version_file in "$version_directory"/*.env; do
@@ -76,6 +80,7 @@ grep -F -q 'git rebase origin/main' "$workflow" || fail "rebase before push"
 grep -F -q 'Dev images pinned version update failed' "$workflow" || fail "failure issue title"
 grep -F -q 'just dev-images::all' "$workflow" || fail "verify does not build"
 grep -F -q 'publish=release' "$workflow" || fail "release dispatch"
+grep -F -q 'openshell/versions/base.env' "$workflow" || fail "update commit omits the OpenShell Debian pin"
 if grep -E -q 'contents: write' "$workflow" && ! grep -n 'contents: write' "$workflow" | grep -q 'publish:'; then
   :
 fi

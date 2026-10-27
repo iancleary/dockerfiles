@@ -14,6 +14,10 @@
 # are any. It does not modify the repository. A clean tree exits 0.
 # Other failures exit 2.
 #
+# The bookworm-slim digest is written to dev-images/versions/debian.env and
+# openshell/versions/base.env in the same run. The OpenShell Monday update
+# does not write that digest.
+#
 # Checksum download and attestation helpers come from
 # openshell/scripts/bump-versions.sh.
 set -euo pipefail
@@ -130,7 +134,9 @@ update_github_release_tool() {
 }
 
 update_debian_image_digest() {
-  local version_file=$work/versions/debian.env token headers digest manifest new_image old_image architecture
+  local development_version_file=$work/versions/debian.env
+  local openshell_version_file=$work/openshell-base.env
+  local token headers digest manifest new_image development_old openshell_old architecture
   token=$(curl_public "https://auth.docker.io/token?service=registry.docker.io&scope=repository:library/debian:pull" | jq -r '.token // empty') \
     || die "debian registry token failed"
   [[ -n "$token" ]] || die "debian registry token was empty"
@@ -152,10 +158,12 @@ update_debian_image_digest() {
     ' <<<"$manifest" >/dev/null || die "debian bookworm-slim index has no linux/${architecture}"
   done
   new_image="debian:bookworm-slim@${digest}"
-  old_image=$(kv "$version_file" DEBIAN_IMAGE)
-  set_kv "$version_file" DEBIAN_IMAGE "$new_image"
-  set_kv "$version_file" DEBIAN_CHECKSUM_SOURCE docker_hub_manifest_list_digest
-  if [[ "$old_image" != "$new_image" ]]; then
+  development_old=$(kv "$development_version_file" DEBIAN_IMAGE)
+  openshell_old=$(kv "$openshell_version_file" DEBIAN_IMAGE)
+  set_kv "$development_version_file" DEBIAN_IMAGE "$new_image"
+  set_kv "$development_version_file" DEBIAN_CHECKSUM_SOURCE docker_hub_manifest_list_digest
+  set_kv "$openshell_version_file" DEBIAN_IMAGE "$new_image"
+  if [[ "$development_old" != "$new_image" || "$openshell_old" != "$new_image" ]]; then
     note "update debian:bookworm-slim digest"
   else
     printf 'debian bookworm-slim unchanged\n' >&2
@@ -269,10 +277,12 @@ main() {
   trap 'rm -rf "$work"' EXIT
   mkdir -p "$work/versions"
   cp -a "$repository_root/dev-images/versions/." "$work/versions/"
+  cp -a "$repository_root/openshell/versions/base.env" "$work/openshell-base.env"
   update_pinned_versions
 
   local differ=false
-  if files_differ "$repository_root/dev-images/versions" "$work/versions"; then
+  if files_differ "$repository_root/dev-images/versions" "$work/versions" \
+    || files_differ "$repository_root/openshell/versions/base.env" "$work/openshell-base.env"; then
     differ=true
   fi
   if [[ "$differ" == true && ${#changes[@]} -eq 0 ]]; then
@@ -291,6 +301,7 @@ main() {
   fi
   if [[ "$check" == false && "$differ" == true ]]; then
     cp -a "$work/versions/." "$repository_root/dev-images/versions/"
+    cp -a "$work/openshell-base.env" "$repository_root/openshell/versions/base.env"
   fi
   if [[ ${#changes[@]} -gt 0 ]]; then
     printf '%s\n' "${changes[@]}"

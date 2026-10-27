@@ -40,7 +40,8 @@ grep_tree() {
       "$repository_root/dev-images" \
       "$repository_root/.github/workflows/dev-images-publish.yml" \
       "$repository_root/.github/workflows/dev-images-build-single-image.yml" \
-      "$repository_root/.github/workflows/dev-images-update-pinned-versions.yml"
+      "$repository_root/.github/workflows/dev-images-update-pinned-versions.yml" \
+      "$repository_root/.github/workflows/dev-images-verify-pull-request.yml"
   fi
 }
 

@@ -45,12 +45,12 @@ jobs:
           fi
           summary="${RUNNER_TEMP}/summary.txt"
           bash dev-images/scripts/update_pinned_versions.sh --summary-file "$summary"
-          if git diff --quiet -- dev-images/versions; then
+          if git diff --quiet -- dev-images/versions openshell/versions/base.env; then
             echo "changed=false" >>"$GITHUB_OUTPUT"
             echo "No version changes." >>"$GITHUB_STEP_SUMMARY"
           else
             mkdir -p version-out
-            git diff --binary -- dev-images/versions >version-out/version.patch
+            git diff --binary -- dev-images/versions openshell/versions/base.env >version-out/version.patch
             cp "$summary" version-out/summary.txt
             echo "changed=true" >>"$GITHUB_OUTPUT"
             {
@@ -140,7 +140,7 @@ jobs:
           set -euo pipefail
           git apply --check version-out/version.patch
           git apply version-out/version.patch
-          git add -- dev-images/versions
+          git add -- dev-images/versions openshell/versions/base.env
           git diff --cached --quiet && {
             echo "patch produced no staged changes" >&2
             exit 1
