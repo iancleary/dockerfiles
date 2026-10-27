@@ -1,0 +1,194 @@
+name: Publish dev images
+
+# Push to main publishes :edge and :sha-<short> when a dev-base input changed.
+# A GITHUB_TOKEN push does not start this workflow. The pinned-version
+# update workflow dispatches it instead.
+# schedule runs daily at 15:45 UTC (08:45 America/Phoenix). The plan script
+# publishes a calver when there is no dev-images-YYYY.MM.DD.NN tag, when the
+# newest tag is at least 30 calendar days old, or when it is at least 3 days
+# old and a release input changed since that tag. workflow_dispatch release
+# does not use those gates. edge republishes :edge.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "dev-images/**"
+      - ".github/workflows/dev-images-publish.yml"
+      - ".github/workflows/dev-images-build-single-image.yml"
+      - "justfile"
+  schedule:
+    - cron: "45 15 * * *"
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "edge publishes :edge and :sha. release publishes a calver tag and :latest."
+        type: choice
+        required: true
+        default: edge
+        options:
+          - edge
+          - release
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dev-images-publish
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    timeout-minutes: 10
+    outputs:
+      publish: ${{ steps.plan.outputs.publish }}
+      image_version: ${{ steps.plan.outputs.image_version }}
+      git_tag: ${{ steps.plan.outputs.git_tag }}
+      short_sha: ${{ steps.plan.outputs.short_sha }}
+      git_sha: ${{ steps.plan.outputs.git_sha }}
+      no_cache: ${{ steps.plan.outputs.no_cache }}
+      build_base: ${{ steps.plan.outputs.build_base }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Test plan, manifests, and image scripts
+        run: |
+          bash dev-images/scripts/plan_release_test.sh
+          bash dev-images/scripts/merge_image_manifests_test.sh
+          bash dev-images/scripts/publish_release_test.sh
+          bash dev-images/scripts/install_release_archive_test.sh
+          bash dev-images/scripts/update_pinned_versions_test.sh
+          bash dev-images/scripts/smoke_test_image_test.sh
+          bash dev-images/scripts/build_image_test.sh
+          bash dev-images/scripts/push_image_by_digest_test.sh
+          bash dev-images/scripts/scan_for_personal_data_test.sh
+          bash dev-images/scripts/scan_for_personal_data.sh
+
+      - name: Plan
+        id: plan
+        env:
+          PLAN_EVENT: ${{ github.event_name }}
+          PLAN_PUBLISH: ${{ github.event_name == 'workflow_dispatch' && inputs.publish || '' }}
+          PLAN_BEFORE: ${{ github.event_name == 'push' && github.event.before || '' }}
+          PLAN_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          args=(--event "$PLAN_EVENT" --sha "$PLAN_SHA")
+          if [[ -n "$PLAN_PUBLISH" ]]; then
+            args+=(--publish "$PLAN_PUBLISH")
+          fi
+          if [[ "$PLAN_EVENT" == push ]]; then
+            if [[ -z "$PLAN_BEFORE" || "$PLAN_BEFORE" =~ ^0+$ ]] || ! git cat-file -e "${PLAN_BEFORE}^{commit}" 2>/dev/null; then
+              args+=(--all-files)
+            else
+              git diff --name-only "$PLAN_BEFORE" "$PLAN_SHA" >"$RUNNER_TEMP/files.txt"
+              args+=(--files "$RUNNER_TEMP/files.txt")
+            fi
+          fi
+          bash dev-images/scripts/plan_release.sh "${args[@]}" | tee "$RUNNER_TEMP/plan.env"
+          cat "$RUNNER_TEMP/plan.env" >>"$GITHUB_OUTPUT"
+          {
+            echo "### Dev images plan"
+            echo
+            sed 's/^/- `/' "$RUNNER_TEMP/plan.env" | sed 's/$/`/'
+          } >>"$GITHUB_STEP_SUMMARY"
+
+  base:
+    needs: plan
+    if: needs.plan.outputs.build_base == 'true'
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/dev-images-build-single-image.yml
+    with:
+      recipe: base
+      image: ghcr.io/iancleary/dev-base
+      publish: ${{ needs.plan.outputs.publish }}
+      image_version: ${{ needs.plan.outputs.image_version }}
+      short_sha: ${{ needs.plan.outputs.short_sha }}
+      git_sha: ${{ needs.plan.outputs.git_sha }}
+      no_cache: ${{ needs.plan.outputs.no_cache == 'true' }}
+
+  release:
+    needs: [plan, base]
+    if: |
+      always() &&
+      needs.plan.result == 'success' &&
+      needs.plan.outputs.publish == 'release' &&
+      (needs.plan.outputs.build_base != 'true' || needs.base.result == 'success')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    # contents: write creates the calver git tag and GitHub Release.
+    # packages: write moves the calver tag and :latest. This job does not
+    # run when the manifest failed, so those tags move together.
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Log in to GHCR
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tag the image and create the calver release
+        env:
+          GIT_TAG: ${{ needs.plan.outputs.git_tag }}
+          IMAGE_VERSION: ${{ needs.plan.outputs.image_version }}
+          GH_TOKEN: ${{ github.token }}
+          DIGEST_base: ${{ needs.base.outputs.digest }}
+        run: bash dev-images/scripts/publish_release.sh
+
+  notify:
+    needs: [plan, base, release]
+    if: |
+      always() &&
+      github.event_name == 'schedule' &&
+      (
+        needs.plan.result == 'failure' ||
+        needs.base.result == 'failure' ||
+        needs.release.result == 'failure'
+      )
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update the failure issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          title="Dev images scheduled publish failed"
+          url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          body=$(printf '%s\n' \
+            "The scheduled dev images publish failed." \
+            "Run: ${url}" \
+            "A failed manifest does not move :latest or the calver tag.")
+          number=$(gh issue list --repo "$GH_REPO" --state open --limit 50 --json number,title \
+            --jq '[.[] | select(.title == "Dev images scheduled publish failed") | .number][0] // empty')
+          if [[ -n "$number" ]]; then
+            gh issue comment "$number" --repo "$GH_REPO" --body "$body"
+          else
+            gh issue create --repo "$GH_REPO" --title "$title" --body "$body"
+          fi

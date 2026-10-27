@@ -627,6 +627,8 @@ bump_python_versions() {
     PYTHON_SHA256_ARM64 "$arm_sha"
 }
 
+# The Monday OpenShell update does not call this function.
+# dev-images/scripts/update_pinned_versions.sh writes both Debian pins.
 bump_debian() {
   local file=$work/versions/base.env token headers digest manifest old new arch
   token=$(curl_public "https://auth.docker.io/token?service=registry.docker.io&scope=repository:library/debian:pull" | jq -r '.token // empty') \
@@ -835,7 +837,8 @@ main() {
     "claude-linux-x64.tar.gz" \
     "claude-linux-arm64.tar.gz" \
     CLAUDE_SHA256_AMD64 CLAUDE_SHA256_ARM64
-  bump_debian
+  # dev-images/scripts/update_pinned_versions.sh writes this digest into
+  # openshell/versions/base.env and dev-images/versions/debian.env together.
   bump_actions
 
   local differ=false

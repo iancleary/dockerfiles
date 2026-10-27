@@ -211,8 +211,10 @@ repository activity. A commit on the default branch is the activity that
 keeps the schedule. The weekly bump supplies that commit when a pin moves.
 The 30-day image rebuild creates a tag and a GitHub Release, and it does
 not by itself add a commit, so do not count on it to reset the 60 days.
-Debian's bookworm-slim digest moves often enough that the Monday run
-usually commits. If Actions has disabled the workflow, re-enable it from
+The Monday OpenShell run does not rewrite the bookworm-slim digest. The
+dev-images pinned-version update writes `openshell/versions/base.env` and
+`dev-images/versions/debian.env` in one commit. Other OpenShell pins still
+move on this Monday run. If Actions has disabled the workflow, re-enable it from
 the Actions tab. The bump workflow's `contents: write` push also needs
 Workflow permissions set to read and write, and a ruleset that lets
 `github-actions[bot]` push to `main`.

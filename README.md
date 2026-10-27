@@ -8,6 +8,7 @@ the root [`justfile`](justfile).
 | Family | Module | Images |
 | --- | --- | --- |
 | [openshell/](openshell/README.md) | `just openshell::…` | `ghcr.io/iancleary/openshell-<layer>` |
+| [dev-images/](dev-images/README.md) | `just dev-images::…` | `ghcr.io/iancleary/dev-base` |
 
 Local builds and CI call the same recipes. From the repository root, with
 Docker already running:
@@ -17,6 +18,10 @@ just openshell::build
 ```
 
 `just --list` shows families. `just --list --list-submodules` shows recipes.
+
+Development images are the second family. `dev-base` is Debian with pinned
+command-line tools. Language images are not published yet. Build and tag
+rules are in [dev-images/README.md](dev-images/README.md).
 
 ## Pulling images
 

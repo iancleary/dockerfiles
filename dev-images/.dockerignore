@@ -1,0 +1,4 @@
+# Documentation and tests are not part of the image.
+README.md
+justfile
+scripts/*_test.sh

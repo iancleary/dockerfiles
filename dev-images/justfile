@@ -1,0 +1,47 @@
+# Local dev-base builds. Docker Buildx must already be available.
+# The image stays on this machine as dev-base:local unless DEV_BASE_TAG is set.
+# CI calls dev-images/scripts/build_image.sh with PLATFORM set. That path
+# loads dev-images-ci-base:smoke and does not push.
+
+set shell := ["bash", "-euo", "pipefail", "-c"]
+
+images := source_directory()
+module_just := images / "justfile"
+base_tag := env_var_or_default("DEV_BASE_TAG", "dev-base:local")
+
+# List image recipes without building.
+default:
+    @just --justfile {{ quote(module_just) }} --list
+
+# Stop when the Docker CLI is missing or the daemon is not already running.
+[private]
+_require-docker:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if ! command -v docker >/dev/null 2>&1; then
+      printf 'docker is not on PATH. Start Docker yourself, then re-run.\n' >&2
+      exit 1
+    fi
+    if ! docker info >/dev/null 2>&1; then
+      printf 'Docker is not running. Start it yourself, then re-run.\n' >&2
+      exit 1
+    fi
+    if ! docker buildx version >/dev/null 2>&1; then
+      printf 'docker buildx is required. Install it, then re-run.\n' >&2
+      exit 1
+    fi
+
+# Build dev-base:local.
+base: _require-docker
+    #!/usr/bin/env bash
+    set -euo pipefail
+    bash {{ quote(images / "scripts" / "build_image.sh") }} --tag {{ quote(base_tag) }}
+
+# Confirm the pinned tools and the developer account.
+smoke-base: base
+    #!/usr/bin/env bash
+    set -euo pipefail
+    bash {{ quote(images / "scripts" / "smoke_test_image.sh") }} {{ quote(base_tag) }}
+
+# Build dev-base and smoke-test it. Language images are a later phase.
+all: smoke-base
