@@ -179,6 +179,32 @@ download_archive() {
     --connect-timeout 20 --max-time 600 -o "$destination_path" "$archive_url"
 }
 
+# The download name keeps the archive suffix. Extraction classifies the file
+# by that suffix, and a raw release file has none.
+downloaded_archive_path() {
+  local download_directory=$1 archive_url=$2
+  case "$archive_url" in
+    *.tar.gz)
+      printf '%s/archive.tar.gz\n' "$download_directory"
+      ;;
+    *.tgz)
+      printf '%s/archive.tgz\n' "$download_directory"
+      ;;
+    *.tar.xz)
+      printf '%s/archive.tar.xz\n' "$download_directory"
+      ;;
+    *.txz)
+      printf '%s/archive.txz\n' "$download_directory"
+      ;;
+    *.zip)
+      printf '%s/archive.zip\n' "$download_directory"
+      ;;
+    *)
+      printf '%s/archive\n' "$download_directory"
+      ;;
+  esac
+}
+
 install_release_archive() {
   local version_file=$1 key_prefix=$2 destination_directory=$3
   shift 3
@@ -191,7 +217,7 @@ install_release_archive() {
   require_checksum_source "$checksum_source"
   label="${key_prefix} ${architecture_suffix}"
   download_directory=$(mktemp -d)
-  archive_path="${download_directory}/archive"
+  archive_path=$(downloaded_archive_path "$download_directory" "$archive_url")
   download_archive "$archive_url" "$archive_path"
   assert_recorded_sha256 "$archive_path" "$expected_sha256" "$label"
   case "$archive_url" in

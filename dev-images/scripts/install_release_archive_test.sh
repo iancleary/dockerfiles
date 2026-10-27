@@ -59,6 +59,15 @@ if grep -R -n 'releases/download' "$installer"; then
   fail "installer derives a release URL"
 fi
 
+[[ "$(downloaded_archive_path /tmp/dl https://example.invalid/tool.tar.gz)" == /tmp/dl/archive.tar.gz ]] \
+  || fail "tar.gz download name"
+[[ "$(downloaded_archive_path /tmp/dl https://example.invalid/tool.tar.xz)" == /tmp/dl/archive.tar.xz ]] \
+  || fail "tar.xz download name"
+[[ "$(downloaded_archive_path /tmp/dl https://example.invalid/tool.zip)" == /tmp/dl/archive.zip ]] \
+  || fail "zip download name"
+[[ "$(downloaded_archive_path /tmp/dl https://example.invalid/jq-linux-amd64)" == /tmp/dl/archive ]] \
+  || fail "raw download name"
+
 version_directory=$root/dev-images/versions
 for version_file in "$version_directory"/*.env; do
   base=$(basename "$version_file")
